@@ -1,6 +1,6 @@
 # Compute diagnostics for all TCOs and write to table
 
-source("GetConnectionDetails")
+source("GetConnectionDetails.R")
 library(dplyr)
 
 # Connect ----------------------------------------------------------------------
@@ -150,6 +150,8 @@ diagnostics <- mdrr |>
     full_join(equipoise,
                by = join_by(databaseId, targetId, comparatorId, analysisId)) |>
     full_join(ease,
+              by = join_by(databaseId, targetId, comparatorId, analysisId)) |>
+    full_join(balance,
               by = join_by(databaseId, targetId, comparatorId, analysisId)) |>
     filter(!grepl("Meta-analysis", databaseId))
 
