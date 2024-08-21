@@ -1,11 +1,11 @@
 library(DatabaseConnector)
 
-connectionDetails <- createConnectionDetails(
-    dbms = "postgresql",
-    server = paste(Sys.getenv("legendServer"), Sys.getenv("legendDatabase"), sep = "/"),
-    user = Sys.getenv("legendUser"),
-    password = Sys.getenv("legendPw")
-)
+# connectionDetails <- createConnectionDetails(
+#     dbms = "postgresql",
+#     server = paste(Sys.getenv("legendServer"), Sys.getenv("legendDatabase"), sep = "/"),
+#     user = Sys.getenv("legendUser"),
+#     password = Sys.getenv("legendPw")
+# )
 connectionDetails <- createConnectionDetails(
     dbms = "postgresql",
     server = paste(Sys.getenv("shinydbServer"), Sys.getenv("shinydbDatabase"), sep = "/"),
@@ -15,13 +15,4 @@ connectionDetails <- createConnectionDetails(
 
 schema <- "legendt2dm_drug_results"
 
-
-# connection <- connect(connectionDetails)
-#
-# diagnostics <- renderTranslateQuerySql(connection = connection,
-#                                        sql = "SELECT * FROM @schema.diagnostics",
-#                                        schema = schema,
-#                                        snakeCaseToCamelCase = TRUE)
-# mean(is.na(diagnostics$maxAbsStdDiffMean))
-#
 # executeSql(connection, "COMMIT;")
