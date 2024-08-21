@@ -67,13 +67,13 @@ createPerDbResultsTable <- function(target, comparator, outcome, connection) {
     balanceThreshold <- 0.1
 
     plot1 <- ggplot(vizData, aes(x = median, y = y)) +
-        geom_rect(xmin = -balanceThreshold, ymin = 0, xmax = balanceThreshold, ymax = 3, alpha = 0.25, size = 0) +
+        geom_rect(xmin = -balanceThreshold, ymin = 0, xmax = balanceThreshold, ymax = 1.5, alpha = 0.1, size = 0) +
         geom_vline(xintercept = 0) +
         geom_errorbarh(aes(xmin = min, xmax = max, color = type), height = boxPlotHeight*2) +
         geom_rect(aes(xmin = lower, ymin=y-boxPlotHeight, xmax = upper, ymax = y+boxPlotHeight, color = type, fill = type)) +
         geom_segment(aes(x = median, y = y-boxPlotHeight, xend = median, yend = y+boxPlotHeight, color = type), size = 1) +
-        geom_label(aes(label = label), x = 0, y = 1.5, vjust = 1, label.size = 0, data = vizDbData) +
-        coord_cartesian(xlim = c(-1, 1), ylim = c(0.25, 1.5)) +
+        geom_label(aes(label = label), x = 0, y = 2, vjust = 1, label.size = 0, data = vizDbData) +
+        coord_cartesian(xlim = c(-1, 1), ylim = c(0.25, 2)) +
         scale_x_continuous("Std. diff. means") +
         scale_color_manual(values = c(alpha("#e5ae38", 0.6), alpha("#6d904f", 0.6))) +
         scale_fill_manual(values = c(alpha("#e5ae38", 0.6), alpha("#6d904f", 0.6))) +
@@ -87,9 +87,10 @@ createPerDbResultsTable <- function(target, comparator, outcome, connection) {
             panel.grid.major.x = element_line(color = "lightgray"),
             panel.background = element_blank(),
             strip.background = element_blank(),
-            strip.text.y.left = element_text(angle = 0),
+            strip.text.y.left = element_text(angle = 0, hjust = 1),
             legend.position = "top",
-            legend.title = element_blank()
+            legend.title = element_blank(),
+            legend.key.size = unit(0.25, "cm")
         )
     plot1
 
@@ -133,12 +134,13 @@ createPerDbResultsTable <- function(target, comparator, outcome, connection) {
                                NA,
                                sprintf("Equipoise = %0.2f", minEquipoise)))
     vizDbData$databaseId <- databaseIdToFactor(vizDbData$databaseId, databaseIds)
-    labelY <- max(vizData$density)
+    labelY <- max(vizData$density) + 0.5
 
     plot2 <- ggplot(vizData, aes(x = preferenceScore, y = density)) +
         geom_area(aes(color = type, fill = type), position = "identity", alpha = 0.5) +
+        geom_hline(yintercept = 0) +
         geom_label(aes(label = label), x = 0.5, y = labelY, vjust = 1, label.size = 0, data = vizDbData) +
-        coord_cartesian(xlim = c(0, 1)) +
+        coord_cartesian(xlim = c(0, 1), ylim = c(0, labelY)) +
         scale_x_continuous("Preference score") +
         scale_fill_manual(values = c(alpha("#336B91", 0.6), alpha("#EB6622", 0.6))) +
         scale_color_manual(values = c(alpha("#336B91", 0.7), alpha("#EB6622", 0.7))) +
@@ -155,6 +157,7 @@ createPerDbResultsTable <- function(target, comparator, outcome, connection) {
             strip.text.y.left = element_blank(),
             legend.position = "top",
             legend.title = element_blank(),
+            legend.key.size = unit(0.25, "cm")
         )
     plot2
 
@@ -217,6 +220,7 @@ createPerDbResultsTable <- function(target, comparator, outcome, connection) {
             strip.text.y.left = element_blank(),
             legend.position = "top",
             legend.title = element_blank(),
+            legend.key.size = unit(0.25, "cm")
         )
     plot3
 
@@ -250,7 +254,7 @@ createPerDbResultsTable <- function(target, comparator, outcome, connection) {
     plot4 <- ggplot(vizData, aes(x = log(calibratedRr))) +
         geom_vline(xintercept = 0) +
         geom_point(aes(color = type), shape = 16, y = -0.5) +
-        geom_errorbarh(aes(xmin = log(calibratedCi95Lb), xmax = log(calibratedCi95Ub), color = type, y = -0.5)) +
+        geom_errorbarh(aes(xmin = log(calibratedCi95Lb), xmax = log(calibratedCi95Ub), color = type, y = -0.5, height = 0.5)) +
         geom_label(aes(label = label), x = 0, y = 1, vjust = 1, label.size = 0) +
         coord_cartesian(xlim = log(c(0.25, 4)), ylim = c(-1, 1)) +
         scale_x_continuous("Hazard ratio", breaks = log(breaks), labels = breaks) +
@@ -268,26 +272,13 @@ createPerDbResultsTable <- function(target, comparator, outcome, connection) {
             strip.text.y.left = element_blank(),
             legend.position = "top",
             legend.title = element_blank(),
+            legend.key.size = unit(0.25, "cm")
         )
     plot4
 
 
-    grid.arrange(plot1, plot2, plot3, plot4, ncol = 4)
+    plot <- grid.arrange(plot1, plot2, plot3, plot4, ncol = 4, widths = c(1, 0.5, 0.5, 0.5))
 
-
-
-
-
+    ggsave("plot.png", plot = plot, width = 8, height = 5, dpi = 300)
 }
 
-
-scale_fill_manual(values = c(alpha("#336B91", 0.6), alpha("#EB6622", 0.6))) +
-    scale_color_manual(values = c(alpha("#336B91", 0.7), alpha("#EB6622", 0.7))) +
-    theme(axis.text.y = element_blank(),
-          axis.ticks.y = element_blank(),
-          panel.grid.major.y = element_blank(),
-          panel.grid.minor = element_blank())
-
-mrsPlot <- MediationAnalysis::plotMrsByMediator(mrs, showFraction = FALSE)
-mrsPlot <- mrsPlot +
-    scale_fill_manual(values = c(alpha("#6d904f", 0.6), alpha("#e5ae38", 0.6))) +
