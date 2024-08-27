@@ -204,8 +204,8 @@ createPerDbResultsTable <- function(target, comparator, outcome, connection) {
         geom_label(aes(label = label), x = 5.5, y = 2, vjust = 1, label.size = 0, size = 3) +
         coord_cartesian(xlim = c(1, 10), ylim = c(0, 2)) +
         scale_x_continuous("MDRR", breaks = breaks) +
-        scale_color_manual(values = "#336B91") +
-        scale_fill_manual(values = "#336B91") +
+        scale_color_manual(values = "#336B91", na.translate = FALSE) +
+        scale_fill_manual(values = "#336B91", na.translate = FALSE) +
         facet_grid(databaseId~., switch = "y") +
         theme(
             axis.text.y = element_blank(),
@@ -277,7 +277,7 @@ createPerDbResultsTable <- function(target, comparator, outcome, connection) {
         geom_label(aes(label = label), x = 0, y = 1, vjust = 1, label.size = 0, size = 3, data = vizDbData) +
         coord_cartesian(xlim = log(c(0.25, 4)), ylim = c(0, 1)) +
         scale_x_continuous("Hazard ratio", breaks = log(breaks), labels = breaks) +
-        scale_color_manual(values = "#336B91") +
+        scale_color_manual(values = "#336B91", na.translate = FALSE) +
         facet_grid(databaseId~., switch = "y") +
         theme(
             axis.text.y = element_blank(),
@@ -313,7 +313,8 @@ createPerDbResultsTable <- function(target, comparator, outcome, connection) {
                                    outcome = outcome,
                                    snakeCaseToCamelCase = TRUE)
     vizData <- hoi |>
-        filter(!grepl("Meta-analysis", databaseId)) |>
+        filter(!grepl("Meta-analysis", databaseId),
+               !is.na(calibratedRr)) |>
         mutate(type = "Calibrated estimate",
                label = if_else(is.na(calibratedRr), NA,
                                sprintf("%0.2f (%0.2f - %0.2f)", calibratedRr, calibratedCi95Lb, calibratedCi95Ub)),
@@ -335,7 +336,7 @@ createPerDbResultsTable <- function(target, comparator, outcome, connection) {
         geom_label(aes(label = label), x = 0, y = 1, vjust = 1, label.size = 0, size = 3) +
         coord_cartesian(xlim = log(c(0.25, 4)), ylim = c(-1, 1)) +
         scale_x_continuous("Hazard ratio", breaks = log(breaks), labels = breaks) +
-        scale_color_manual(values = "black") +
+        scale_color_manual(values = "black", na.translate = FALSE) +
         facet_grid(databaseId~., switch = "y") +
         theme(
             axis.text.y = element_blank(),
@@ -354,6 +355,6 @@ createPerDbResultsTable <- function(target, comparator, outcome, connection) {
     # Combine plots --------------------------------------------------------------------------------
     plot <- grid.arrange(plotEquipoise, plotBalance, plotMdrr, plotEase, plotEstimate, ncol = 5, widths = c(1.0, 0.6, 0.33, 0.6, 0.6))
 
-    ggsave("plot.png", plot = plot, width = 8.5, height = 5, dpi = 300)
+    ggsave("plot.png", plot = plot, width = 8.5, height = 6, dpi = 300)
 }
 
