@@ -24,6 +24,74 @@ createPerDbResultsTable <- function(target, comparator, outcome, connection) {
                                               schema = schema,
                                               snakeCaseToCamelCase = TRUE)[, 1]
 
+    # Equipoise
+    sql <- "
+    SELECT database_id,
+      preference_score,
+      target_density,
+      comparator_density
+    FROM @schema.preference_score_dist
+    WHERE target_id = @target
+        AND comparator_id = @comparator
+        AND analysis_id = 5;
+    "
+    ps <- renderTranslateQuerySql(connection = connection,
+                                  sql = sql,
+                                  schema = schema,
+                                  target = target,
+                                  comparator = comparator,
+                                  snakeCaseToCamelCase = TRUE)
+    vizData <- bind_rows(ps |>
+                             select(databaseId,
+                                    preferenceScore,
+                                    density = targetDensity) |>
+                             mutate(type = "Target"),
+                         ps |>
+                             select(databaseId,
+                                    preferenceScore,
+                                    density = comparatorDensity) |>
+                             mutate(type = "Comparator")
+    )
+    vizData$databaseId <- databaseIdToFactor(vizData$databaseId, databaseIds)
+    vizData$type <- factor(vizData$type, levels = sort(unique(vizData$type), decreasing = FALSE))
+
+    vizDbData <- diagnostics |>
+        filter(targetId == target,
+               comparatorId == comparator,
+               outcomeId == outcome,
+               analysisId == 5) |>
+        mutate(label = if_else(is.na(minEquipoise),
+                               NA,
+                               sprintf("Equipoise = %0.2f", minEquipoise)))
+    vizDbData$databaseId <- databaseIdToFactor(vizDbData$databaseId, databaseIds)
+    labelY <- max(vizData$density) + 0.5
+
+    plot1 <- ggplot(vizData, aes(x = preferenceScore, y = density)) +
+        geom_area(aes(color = type, fill = type), position = "identity", alpha = 0.5) +
+        geom_hline(yintercept = 0) +
+        geom_label(aes(label = label), x = 0.5, y = labelY, vjust = 1, label.size = 0, data = vizDbData) +
+        coord_cartesian(xlim = c(0, 1), ylim = c(0, labelY)) +
+        scale_x_continuous("Preference score") +
+        scale_fill_manual(values = c(alpha("#336B91", 0.6), alpha("#EB6622", 0.6))) +
+        scale_color_manual(values = c(alpha("#336B91", 0.7), alpha("#EB6622", 0.7))) +
+        facet_grid(databaseId~., switch = "y") +
+        theme(
+            axis.text.y = element_blank(),
+            axis.title.y = element_blank(),
+            axis.ticks.y = element_blank(),
+            panel.grid.major.y = element_blank(),
+            panel.grid.minor.y = element_blank(),
+            panel.grid.major.x = element_line(color = "lightgray"),
+            panel.background = element_blank(),
+            strip.background = element_blank(),
+            strip.text.y.left = element_text(angle = 0, hjust = 1),
+            legend.position = "top",
+            legend.title = element_blank(),
+            legend.key.size = unit(0.25, "cm")
+        )
+    plot1
+
+
     # Covariate balance
     sql <- "
     SELECT database_id,
@@ -66,7 +134,7 @@ createPerDbResultsTable <- function(target, comparator, outcome, connection) {
     boxPlotHeight <- 0.2
     balanceThreshold <- 0.1
 
-    plot1 <- ggplot(vizData, aes(x = median, y = y)) +
+    plot2 <- ggplot(vizData, aes(x = median, y = y)) +
         geom_rect(xmin = -balanceThreshold, ymin = 0, xmax = balanceThreshold, ymax = 1.5, alpha = 0.1, size = 0) +
         geom_vline(xintercept = 0) +
         geom_errorbarh(aes(xmin = min, xmax = max, color = type), height = boxPlotHeight*2) +
@@ -87,63 +155,35 @@ createPerDbResultsTable <- function(target, comparator, outcome, connection) {
             panel.grid.major.x = element_line(color = "lightgray"),
             panel.background = element_blank(),
             strip.background = element_blank(),
-            strip.text.y.left = element_text(angle = 0, hjust = 1),
+            strip.text.y.left = element_blank(),
             legend.position = "top",
             legend.title = element_blank(),
             legend.key.size = unit(0.25, "cm")
         )
-    plot1
+    plot2
 
-    # Equipoise
-    sql <- "
-    SELECT database_id,
-      preference_score,
-      target_density,
-      comparator_density
-    FROM @schema.preference_score_dist
-    WHERE target_id = @target
-        AND comparator_id = @comparator
-        AND analysis_id = 5;
-    "
-    ps <- renderTranslateQuerySql(connection = connection,
-                                       sql = sql,
-                                       schema = schema,
-                                       target = target,
-                                       comparator = comparator,
-                                       snakeCaseToCamelCase = TRUE)
-    vizData <- bind_rows(ps |>
-                      select(databaseId,
-                             preferenceScore,
-                             density = targetDensity) |>
-                      mutate(type = "Target"),
-                  ps |>
-                      select(databaseId,
-                             preferenceScore,
-                             density = comparatorDensity) |>
-                      mutate(type = "Comparator")
-        )
-    vizData$databaseId <- databaseIdToFactor(vizData$databaseId, databaseIds)
-    vizData$type <- factor(vizData$type, levels = sort(unique(vizData$type), decreasing = FALSE))
 
-    vizDbData <- diagnostics |>
+    # MDRR
+    vizData <- diagnostics |>
         filter(targetId == target,
                comparatorId == comparator,
                outcomeId == outcome,
-               analysisId == 5) |>
-        mutate(label = if_else(is.na(minEquipoise),
+               analysisId == 2) |>
+        mutate(label = if_else(is.na(mdrr),
                                NA,
-                               sprintf("Equipoise = %0.2f", minEquipoise)))
-    vizDbData$databaseId <- databaseIdToFactor(vizDbData$databaseId, databaseIds)
-    labelY <- max(vizData$density) + 0.5
-
-    plot2 <- ggplot(vizData, aes(x = preferenceScore, y = density)) +
-        geom_area(aes(color = type, fill = type), position = "identity", alpha = 0.5) +
-        geom_hline(yintercept = 0) +
-        geom_label(aes(label = label), x = 0.5, y = labelY, vjust = 1, label.size = 0, data = vizDbData) +
-        coord_cartesian(xlim = c(0, 1), ylim = c(0, labelY)) +
-        scale_x_continuous("Preference score") +
-        scale_fill_manual(values = c(alpha("#336B91", 0.6), alpha("#EB6622", 0.6))) +
-        scale_color_manual(values = c(alpha("#336B91", 0.7), alpha("#EB6622", 0.7))) +
+                               sprintf("MDRR = %0.1f", mdrr)),
+               type = "MDRR")
+    vizData$databaseId <- databaseIdToFactor(vizDbData$databaseId, databaseIds)
+    breaks <- c(0, 4, 10)
+    plotMdrr <- ggplot(vizData) +
+        geom_rect(xmin = 0, ymin = 0, xmax = 4, ymax = 1.5, alpha = 0.1, size = 0) +
+        geom_vline(xintercept = 0) +
+        geom_rect(aes(xmax = mdrr, color = type, fill = type), xmin = 0, ymin = 0.25, ymax = 1.25, alpha = 0.5) +
+        geom_label(aes(label = label), x = 2, y = 2, vjust = 1, label.size = 0) +
+        coord_cartesian(xlim = c(0, 10), ylim = c(0, 2)) +
+        scale_x_continuous("MDRR", breaks = breaks) +
+        scale_color_manual(values = "#336B91") +
+        scale_fill_manual(values = "#336B91") +
         facet_grid(databaseId~., switch = "y") +
         theme(
             axis.text.y = element_blank(),
@@ -157,9 +197,11 @@ createPerDbResultsTable <- function(target, comparator, outcome, connection) {
             strip.text.y.left = element_blank(),
             legend.position = "top",
             legend.title = element_blank(),
-            legend.key.size = unit(0.25, "cm")
+            legend.key.size = unit(0.25, "cm"),
+            # legend.text = element_text(color = "white")
         )
-    plot2
+    plotMdrr
+
 
     # EASE
     negativeControlIds <- renderTranslateQuerySql(connection = connection,
@@ -277,7 +319,7 @@ createPerDbResultsTable <- function(target, comparator, outcome, connection) {
     plot4
 
 
-    plot <- grid.arrange(plot1, plot2, plot3, plot4, ncol = 4, widths = c(1, 0.5, 0.5, 0.5))
+    plot <- grid.arrange(plot1, plot2, plotMdrr, plot3, plot4, ncol = 5, widths = c(1, 0.5, 0.25, 0.5, 0.5))
 
     ggsave("plot.png", plot = plot, width = 8, height = 5, dpi = 300)
 }
