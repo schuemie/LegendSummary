@@ -1,0 +1,48 @@
+---
+format: 
+  pdf:
+    page-layout: full
+    margin-left: 1.5cm
+    margin-right: 1.5cm
+    margin-top: 2cm
+    margin-bottom: 1cm
+header-includes:
+  - \pagestyle{empty}
+---
+
+```{r echo=FALSE,message=FALSE,warning=FALSE}
+library(knitr)
+library(kableExtra)
+target = 141100000 # Sitagliptin
+comparator = 261100000 # Semaglutide
+outcome = 3 # AMI
+source("GetConnectionDetails.R")
+source("PlotsAndTableFunctions.R")
+connection <- connect(connectionDetails)
+```
+## LEGEND-T2DM Evidence Dissemination Summary
+
+```{r echo=FALSE, output="asis"}
+writeLines(createHeader(target, comparator, outcome, connection))
+```
+
+**How Often? (Incidence Rates from Target in PS-matched cohorts)**
+```{r echo=FALSE}
+table <- createHowOftenTable(target, comparator, outcome, connection)
+kable(table, format = "latex", booktabs = TRUE, escape = TRUE, align = c("l", "r", "r", "r", "r")) %>%
+  kable_styling(latex_options = c("hold_position", "striped")) %>%
+  column_spec(1, width = "3cm", latex_valign = "m") %>%
+  column_spec(2, width = "3cm", latex_valign = "m") %>%
+  column_spec(3, width = "3cm", latex_valign = "m") %>%
+  column_spec(4, width = "3cm", latex_valign = "m") %>%
+  column_spec(5, width = "3cm", latex_valign = "m") 
+```
+
+**How Reliable Are the Effect Estimates?  (Objective Diagnostics from PS Matching)**
+```{r echo=FALSE,fig.width=8.5,fig.height=6,warning=FALSE}
+grid::grid.draw(createDiagnosticsTable(target, comparator, outcome, connection))
+```
+
+```{r echo=FALSE,message=FALSE,warning=FALSE}
+disconnect(connection)
+```

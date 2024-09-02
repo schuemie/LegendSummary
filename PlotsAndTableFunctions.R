@@ -1,6 +1,9 @@
 library(ggplot2)
 library(gridExtra)
+library(dplyr)
+library(DatabaseConnector)
 
+# For specific subgroups, must choose specific exposure cohorts:
 target = 141100000 # Sitagliptin
 comparator = 261100000 # Semaglutide
 outcome = 3 # AMI
@@ -17,12 +20,12 @@ databaseIdToFactor <- function(field, databaseIds) {
     return(factor(field, levels = (sort(databaseIds))))
 }
 
-createPerDbResultsTable <- function(target, comparator, outcome, connection) {
+createDiagnosticsTable <- function(target, comparator, outcome, connection) {
 
     databaseIds <- renderTranslateQuerySql(connection = connection,
-                                              sql = "SELECT database_id FROM @schema.database WHERE is_meta_analysis = 0;",
-                                              schema = schema,
-                                              snakeCaseToCamelCase = TRUE)[, 1]
+                                           sql = "SELECT database_id FROM @schema.database WHERE is_meta_analysis = 0;",
+                                           schema = schema,
+                                           snakeCaseToCamelCase = TRUE)[, 1]
 
     # Equipoise ------------------------------------------------------------------------------------
     sql <- "
@@ -110,11 +113,11 @@ createPerDbResultsTable <- function(target, comparator, outcome, connection) {
     GROUP BY database_id;
     "
     balance <- renderTranslateQuerySql(connection = connection,
-                            sql = sql,
-                            schema = schema,
-                            target = target,
-                            comparator = comparator,
-                            snakeCaseToCamelCase = TRUE)
+                                       sql = sql,
+                                       schema = schema,
+                                       target = target,
+                                       comparator = comparator,
+                                       snakeCaseToCamelCase = TRUE)
     vizData <- rbind(cbind(balance,
                            stringToVars(balance$percentilesBefore),
                            type = "Before",
@@ -240,12 +243,12 @@ createPerDbResultsTable <- function(target, comparator, outcome, connection) {
         AND se_log_rr IS NOT NULL;
     "
     ncs <- renderTranslateQuerySql(connection = connection,
-                                  sql = sql,
-                                  schema = schema,
-                                  target = target,
-                                  comparator = comparator,
-                                  negative_control_ids = negativeControlIds,
-                                  snakeCaseToCamelCase = TRUE)
+                                   sql = sql,
+                                   schema = schema,
+                                   target = target,
+                                   comparator = comparator,
+                                   negative_control_ids = negativeControlIds,
+                                   snakeCaseToCamelCase = TRUE)
     vizData <- ncs |>
         filter(!grepl("Meta-analysis", databaseId)) |>
         mutate(type = "Negative control")
@@ -354,7 +357,121 @@ createPerDbResultsTable <- function(target, comparator, outcome, connection) {
 
     # Combine plots --------------------------------------------------------------------------------
     plot <- grid.arrange(plotEquipoise, plotBalance, plotMdrr, plotEase, plotEstimate, ncol = 5, widths = c(1.0, 0.6, 0.33, 0.6, 0.6))
+    #ggsave("plot.png", plot = plot, width = 8.5, height = 6, dpi = 300)
+    return(plot)
+}
 
-    ggsave("plot.png", plot = plot, width = 8.5, height = 6, dpi = 300)
+
+createHowOftenTable <- function(target, comparator, outcome, connection) {
+    databaseIds <- renderTranslateQuerySql(connection = connection,
+                                           sql = "SELECT database_id FROM @schema.database WHERE is_meta_analysis = 0;",
+                                           schema = schema,
+                                           snakeCaseToCamelCase = TRUE)[, 1]
+
+    sql <- "
+    SELECT database_id,
+      target_subjects,
+      target_days,
+      target_outcomes
+    FROM @schema.cohort_method_result
+    WHERE target_id = @target
+        AND comparator_id = @comparator
+        AND analysis_id = 2
+        AND outcome_id = @outcome;
+    "
+    counts <- renderTranslateQuerySql(connection = connection,
+                                      sql = sql,
+                                      schema = schema,
+                                      target = target,
+                                      comparator = comparator,
+                                      outcome = outcome,
+                                      snakeCaseToCamelCase = TRUE)
+    counts <- counts |>
+        filter(!grepl("Meta-analysis", databaseId)) |>
+        full_join(tibble(databaseId = databaseIds), by = join_by(databaseId)) |>
+        mutate(years = targetDays / 365.25) |>
+        mutate(ir = 1000 * targetOutcomes / years) |>
+        mutate(targetSubjects = format(targetSubjects, big.mark = ",", scientific = FALSE),
+               years = format(round(years, 0), big.mark = ",", scientific = FALSE),
+               targetOutcomes = format(round(targetOutcomes, 0), big.mark = ",", scientific = FALSE),
+               ir = format(round(ir, 2), big.mark = ",", scientific = FALSE)) |>
+        mutate(targetSubjects = gsub("-", "<", targetSubjects),
+               years = gsub("-", "<", years),
+               targetOutcomes = gsub("-", "<", targetOutcomes),
+               ir = gsub("-", "<", ir)) |>
+        mutate(targetSubjects = gsub("NA", "-", targetSubjects),
+               years = gsub("NA", "-", years),
+               targetOutcomes = gsub("NA", "-", targetOutcomes),
+               ir = gsub("NA", "-", ir)) |>
+        select(databaseId, targetSubjects, years, targetOutcomes, ir) |>
+        arrange(databaseId)
+    colnames(counts) <- c("Data source", "Persons exposed", "Person-time (yrs)", "Nr. of outcomes", "IR (/1,000 PY)")
+    return(counts)
+}
+
+subgroups <- tibble(
+    abbr = c("main",
+             "younger-age",
+             "middle-age",
+             "older-age",
+             "low-cvr",
+             "higher-cvr",
+             "female",
+             "male",
+             "black",
+             "without-rdz",
+             "with-rdz"),
+    label = c("All",
+              "Age < 45",
+              "45 <= age < 65",
+              "Age >= 65",
+              "Lower cardiovascular risk",
+              "Higher cardiovascular risk",
+              "Female",
+              "Male",
+              "Black",
+              "Without renal impairment",
+              "With renal impairment"),
+)
+
+createHeader <- function(target, comparator, outcome, connection) {
+    # sql <- "
+    # SELECT exposure_name
+    # FROM @schema.exposure_of_interest;"
+    sql <- "
+    SELECT exposure_name
+    FROM @schema.exposure_of_interest
+    WHERE exposure_id = @exposure_id;
+    "
+    targetName <- renderTranslateQuerySql(connection = connection,
+                                          sql = sql,
+                                          schema = schema,
+                                          exposure_id = target,
+                                          snakeCaseToCamelCase = TRUE)[1, 1]
+    comparatorName <- renderTranslateQuerySql(connection = connection,
+                                              sql = sql,
+                                              schema = schema,
+                                              exposure_id = comparator,
+                                              snakeCaseToCamelCase = TRUE)[1, 1]
+    sql <- "
+    SELECT outcome_name
+    FROM @schema.outcome_of_interest
+    WHERE outcome_id = @outcome_id;
+    "
+    outcomeName <- renderTranslateQuerySql(connection = connection,
+                                           sql = sql,
+                                           schema = schema,
+                                           outcome_id = outcome,
+                                           snakeCaseToCamelCase = TRUE)[1, 1]
+    subgroup <- subgroups$label[which(sapply(subgroups$abbr, grepl, x = targetName, fixed = TRUE))]
+    targetName <- trimws(gsub(paste(subgroups$abbr, collapse = "|"), "", targetName))
+    comparatorName <- trimws(gsub(paste(subgroups$abbr, collapse = "|"), "", comparatorName))
+    outcomeName <- gsub("outcome/", "", gsub("_", " ", outcomeName))
+    header <- sprintf("Target: **%s**, Comparator: **%s**\nOutcome: **%s**\n Subgroup: **%s**",
+                      targetName,
+                      comparatorName,
+                      outcomeName,
+                      subgroup)
+    return(header)
 }
 
