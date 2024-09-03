@@ -24,6 +24,7 @@ balance <- renderTranslateQuerySql(connection = connection,
                                    sql = sql,
                                    schema = schema,
                                    snakeCaseToCamelCase = TRUE)
+#saveRDS(balance, "e:/temp/LegendT2dmDiagnostics/balance.rds")
 
 # Equipoise --------------------------------------------------------------------
 sql <- "
@@ -56,6 +57,7 @@ equipoise <- renderTranslateQuerySql(connection = connection,
                                      min = 0.3,
                                      max = 0.7,
                                      snakeCaseToCamelCase = TRUE)
+# saveRDS(equipoise, "e:/temp/LegendT2dmDiagnostics/equipoise.rds")
 
 # EASE -------------------------------------------------------------------------
 negativeControlIds <- renderTranslateQuerySql(connection = connection,
@@ -101,6 +103,7 @@ ParallelLogger::clusterRequire(cluster, "dplyr")
 ease <- ParallelLogger::clusterApply(cluster, groups, computeEase)
 ParallelLogger::stopCluster(cluster)
 ease <- bind_rows(ease)
+# saveRDS(ease, "e:/temp/LegendT2dmDiagnostics/ease.rds")
 
 # MDRR -------------------------------------------------------------------------
 alpha <- 0.05
@@ -127,6 +130,7 @@ mdrr <- mdrr |>
     mutate(pComparator = 1 - pTarget) |>
     mutate(mdrr = exp(sqrt((zBeta + z1MinAlpha)^2/(totalOutcomes * pTarget * pComparator)))) |>
     select(databaseId, targetId, comparatorId, outcomeId, analysisId, mdrr)
+# saveRDS(mdrr, "e:/temp/LegendT2dmDiagnostics/mdrr")
 
 # Database heterogeneity -------------------------------------------------------
 sql <- "
@@ -144,8 +148,40 @@ i2 <- renderTranslateQuerySql(connection = connection,
                                 schema = schema,
                                 negative_control_ids = negativeControlIds,
                                 snakeCaseToCamelCase = TRUE)
+# saveRDS(i2, "e:/temp/LegendT2dmDiagnostics/i2")
 
 # Join into diagnostics tables -------------------------------------------------
+
+# Balance only computed for analyses 5 and 6, but also apply to analyses 2 and 3,
+# and 8 and 9.
+balance <- bind_rows(
+    balance,
+    balance |>
+        mutate(analysisId = analysisId - 3),
+    balance |>
+        mutate(analysisId = analysisId + 3)
+)
+
+# Equipoise should be the same for all, and applies to unadjusted analyses too.
+# Although values appear to be the same across analyses, not all analyses have
+# equal number of records, so picking one, and duplicating for all:
+equipoise <- equipoise |>
+    filter(analysisId == 2)
+equipoise <- equipoise |>
+    select(-analysisId) |>
+    cross_join(tibble(analysisId = 1:9))
+
+# Ignoring analyses with ID >= 10, since these do not seem to have all diagnostics
+# computed or uploaded:
+mdrr <- mdrr |>
+    filter(analysisId < 10)
+ease <- ease |>
+    filter(analysisId < 10)
+i2 <- i2 |>
+    filter(analysisId < 10)
+
+
+# Combine diagnostics into single table:
 diagnostics <- mdrr |>
     full_join(equipoise,
                by = join_by(databaseId, targetId, comparatorId, analysisId)) |>
@@ -155,11 +191,25 @@ diagnostics <- mdrr |>
               by = join_by(databaseId, targetId, comparatorId, analysisId)) |>
     filter(!grepl("Meta-analysis", databaseId))
 
-diagnostics |>
-    filter(mdrr < 10) |>
-    distinct(targetId, comparatorId, outcomeId) |>
+
+
+pass <- diagnostics |>
+    filter(!is.na(maxAbsStdDiffMean), !is.na(minEquipoise)) |>
+    filter(maxAbsStdDiffMean < 0.15, minEquipoise > 0.25)
+passNoEase <- pass |>
+    filter(ease > 0.25)
+nrow(pass)
+nrow(passNoEase)
+nrow(passNoEase) / nrow(pass)
+
+
+pass <- diagnostics |>
+    filter(!is.na(maxAbsStdDiffMean), !is.na(minEquipoise), !is.na(ease)) |>
+    filter(maxAbsStdDiffMean < 0.15, minEquipoise > 0.25, ease < 0.25)
+pass |>
+    group_by(databaseId) |>
     count()
-# 110229
+writeLines(paste(sort(unique(pass$databaseId)), collapse = "\", \""))
 
 saveRDS(diagnostics, "Diagnostics.rds")
 
@@ -180,3 +230,23 @@ saveRDS(maDiagnostics, "MaDiagnostics.rds")
 
 # Disconnect -------------------------------------------------------------------
 disconnect(connection)
+
+
+
+
+
+
+sql <- "SELECT ATTNAME,
+  format_type(pg_attribute.atttypid, pg_attribute.atttypmod)
+FROM pg_index, pg_class, pg_attribute, pg_namespace
+WHERE
+  --pg_class.oid = 'covariate_balance'::regclass AND
+  relname = 'covariate_balance' AND
+  indrelid = pg_class.oid AND
+  nspname = 'legendt2dm_drug_results' AND
+  pg_class.relnamespace = pg_namespace.oid AND
+  pg_attribute.attrelid = pg_class.oid AND
+  pg_attribute.attnum = any(pg_index.indkey)
+ AND indisprimary"
+x = querySql(connection, sql)
+x
