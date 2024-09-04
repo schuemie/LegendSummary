@@ -39,8 +39,13 @@ kable(table, format = "latex", booktabs = TRUE, escape = TRUE, align = c("l", "r
 ```
 
 **How Reliable Are the Effect Estimates?  (Objective Diagnostics from PS Matching)**
-```{r echo=FALSE,fig.width=8.5,fig.height=6,warning=FALSE}
+```{r echo=FALSE,fig.width=8.5,fig.height=5,warning=FALSE}
 grid::grid.draw(createDiagnosticsTable(target, comparator, outcome, connection))
+```
+
+**What have we learned from the OHDSI Network?  (composite estimates)**
+```{r echo=FALSE,fig.width=8.5,fig.height=1.5,warning=FALSE}
+grid::grid.draw(createMetaAnalysisTable(target, comparator, outcome, connection))
 ```
 
 ```{r echo=FALSE,message=FALSE,warning=FALSE}
