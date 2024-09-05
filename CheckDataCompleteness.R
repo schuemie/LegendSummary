@@ -70,14 +70,15 @@ sql <- "
 SELECT DISTINCT database_id,
     target_id,
     comparator_id
-FROM @schema.propensity_model;
+FROM @schema.propensity_model
+WHERE covariate_id != 0;
 "
 modelTcs <- renderTranslateQuerySql(connection = connection,
                                     sql = sql,
                                     schema = schema,
                                     snakeCaseToCamelCase = TRUE)
 tcsMissingBalanceWithModel <- modelTcs |>
-    anti_join(tcsMissingBalance)
+    inner_join(tcsMissingBalance)
 tcsMissingBalanceWithModel |>
     group_by(databaseId) |>
     count()
