@@ -195,7 +195,7 @@ diagnostics <- mdrr |>
 
 pass <- diagnostics |>
     filter(!is.na(maxAbsStdDiffMean), !is.na(minEquipoise)) |>
-    filter(maxAbsStdDiffMean < 0.15, minEquipoise > 0.25)
+    filter(maxAbsStdDiffMean < 0.15, minEquipoise > 0.25, mdrr < 4)
 passNoEase <- pass |>
     filter(ease > 0.25)
 nrow(pass)
@@ -209,6 +209,42 @@ pass <- diagnostics |>
 pass |>
     group_by(databaseId) |>
     count()
+
+
+sql <- "
+SELECT database_id,
+    target_id,
+    comparator_id,
+    analysis_id,
+    MAX(ABS(std_diff_after)) AS max_abs_std_diff_mean
+FROM @schema.covariate_balance
+WHERE outcome_id = 0
+    AND
+GROUP BY database_id,
+    target_id,
+    comparator_id,
+    analysis_id;
+"
+balance <- renderTranslateQuerySql(connection = connection,
+                                   sql = sql,
+                                   schema = schema,
+                                   snakeCaseToCamelCase = TRUE)
+
+
+diagnostics |>
+    filter(maxAbsStdDiffMean < 0.15) |>
+    group_by(databaseId) |>
+    count()
+
+
+diagnostics |>
+    filter(databaseId == "CUIMC") |>
+    summarise(mean(is.na(maxAbsStdDiffMean)),
+              mean(is.na(minEquipoise)),
+              min(maxAbsStdDiffMean, na.rm = T))
+
+
+
 writeLines(paste(sort(unique(pass$databaseId)), collapse = "\", \""))
 
 saveRDS(diagnostics, "Diagnostics.rds")
