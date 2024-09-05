@@ -19,10 +19,12 @@ negativeControlIds <- renderTranslateQuerySql(
     snakeCaseToCamelCase = TRUE
 )[, 1]
 
+# Ignore estimates for unadjusted analyses:
 sql <- "
 SELECT *
 FROM @schema.cohort_method_result
-WHERE se_log_rr IS NOT NULL;
+WHERE se_log_rr IS NOT NULL
+    AND analysis_id NOT IN (1, 4, 7, 11, 14, 17);
 "
 estimates <- renderTranslateQuerySql(connection = connection,
                                      sql = sql,
