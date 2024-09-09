@@ -12,6 +12,8 @@ SELECT database_id,
     target_id,
     comparator_id,
     analysis_id,
+    PERCENTILE_DISC(ARRAY[0, 0.25,0.5,0.75,1]) WITHIN GROUP (ORDER BY std_diff_before) AS percentiles_before,
+    PERCENTILE_DISC(ARRAY[0, 0.25,0.5,0.75,1]) WITHIN GROUP (ORDER BY std_diff_after) AS percentiles_after,
     MAX(ABS(std_diff_after)) AS max_abs_std_diff_mean
 FROM @schema.covariate_balance
 WHERE outcome_id = 0
@@ -24,6 +26,20 @@ balance <- renderTranslateQuerySql(connection = connection,
                                    sql = sql,
                                    schema = schema,
                                    snakeCaseToCamelCase = TRUE)
+
+stringToVars <- function(string, prefix) {
+    parts <- as.numeric(unlist(strsplit(gsub("\\{|\\}", "", string), ",")))
+    parts <- as.data.frame(matrix(parts, ncol = 5, byrow = TRUE))
+    colnames(parts) <- paste0(prefix, c("min", "lower", "median", "upper", "max"))
+    return(parts)
+}
+balance <- bind_cols(
+    balance,
+    stringToVars(balance$percentilesBefore, "sdm_before_"),
+    stringToVars(balance$percentilesAfter, "sdm_after_")
+) |>
+    select(-percentilesBefore, -percentilesAfter)
+
 #saveRDS(balance, "e:/temp/LegendT2dmDiagnostics/balance.rds")
 
 # Equipoise --------------------------------------------------------------------
@@ -104,6 +120,7 @@ ease <- ParallelLogger::clusterApply(cluster, groups, computeEase)
 ParallelLogger::stopCluster(cluster)
 ease <- bind_rows(ease)
 # saveRDS(ease, "e:/temp/LegendT2dmDiagnostics/ease.rds")
+# ease <- readRDS("e:/temp/LegendT2dmDiagnostics/ease.rds")
 
 # MDRR -------------------------------------------------------------------------
 alpha <- 0.05
@@ -189,63 +206,21 @@ diagnostics <- mdrr |>
               by = join_by(databaseId, targetId, comparatorId, analysisId)) |>
     full_join(balance,
               by = join_by(databaseId, targetId, comparatorId, analysisId)) |>
-    filter(!grepl("Meta-analysis", databaseId))
-
-
-
-pass <- diagnostics |>
-    filter(!is.na(maxAbsStdDiffMean), !is.na(minEquipoise)) |>
-    filter(maxAbsStdDiffMean < 0.15, minEquipoise > 0.25, mdrr < 4)
-passNoEase <- pass |>
-    filter(ease > 0.25)
-nrow(pass)
-nrow(passNoEase)
-nrow(passNoEase) / nrow(pass)
-
-
-pass <- diagnostics |>
-    filter(!is.na(maxAbsStdDiffMean), !is.na(minEquipoise), !is.na(ease)) |>
-    filter(maxAbsStdDiffMean < 0.15, minEquipoise > 0.25, ease < 0.25)
-pass |>
+    filter(!grepl("Meta-analysis", databaseId)) |>
+    mutate(unblind = !is.na(maxAbsStdDiffMean) &
+               !is.na(minEquipoise) &
+               !is.na(mdrr) &
+               !is.na(ease) &
+               maxAbsStdDiffMean < 0.15 &
+               minEquipoise > 0.25 &
+               mdrr < 4 &
+               ease < 0.25)
+diagnostics |>
+    filter(unblind) |>
     group_by(databaseId) |>
     count()
 
-
-sql <- "
-SELECT database_id,
-    target_id,
-    comparator_id,
-    analysis_id,
-    MAX(ABS(std_diff_after)) AS max_abs_std_diff_mean
-FROM @schema.covariate_balance
-WHERE outcome_id = 0
-    AND
-GROUP BY database_id,
-    target_id,
-    comparator_id,
-    analysis_id;
-"
-balance <- renderTranslateQuerySql(connection = connection,
-                                   sql = sql,
-                                   schema = schema,
-                                   snakeCaseToCamelCase = TRUE)
-
-
-diagnostics |>
-    filter(maxAbsStdDiffMean < 0.15) |>
-    group_by(databaseId) |>
-    count()
-
-
-diagnostics |>
-    filter(databaseId == "CUIMC") |>
-    summarise(mean(is.na(maxAbsStdDiffMean)),
-              mean(is.na(minEquipoise)),
-              min(maxAbsStdDiffMean, na.rm = T))
-
-
-
-writeLines(paste(sort(unique(pass$databaseId)), collapse = "\", \""))
+writeLines(paste(sort(unique(diagnostics$databaseId[diagnostics$unblind])), collapse = "\", \""))
 
 saveRDS(diagnostics, "Diagnostics.rds")
 
@@ -254,35 +229,16 @@ maDiagnostics <- mdrr |>
               by = join_by(databaseId, targetId, comparatorId, outcomeId, analysisId)) |>
     full_join(ease,
               by = join_by(databaseId, targetId, comparatorId, analysisId)) |>
-    filter(grepl("Meta-analysis", databaseId))
-
-maDiagnostics |>
-    filter(mdrr < 10) |>
-    distinct(targetId, comparatorId, outcomeId) |>
-    count()
-# 31575
+    filter(grepl("Meta-analysis", databaseId)) |>
+    mutate(unblind = !is.na(i2) &
+               !is.na(mdrr) &
+               !is.na(ease) &
+               i2 < 0.45 &
+               mdrr < 4 &
+               ease < 0.25)
 
 saveRDS(maDiagnostics, "MaDiagnostics.rds")
 
 # Disconnect -------------------------------------------------------------------
 disconnect(connection)
 
-
-
-
-
-
-sql <- "SELECT ATTNAME,
-  format_type(pg_attribute.atttypid, pg_attribute.atttypmod)
-FROM pg_index, pg_class, pg_attribute, pg_namespace
-WHERE
-  --pg_class.oid = 'covariate_balance'::regclass AND
-  relname = 'covariate_balance' AND
-  indrelid = pg_class.oid AND
-  nspname = 'legendt2dm_drug_results' AND
-  pg_class.relnamespace = pg_namespace.oid AND
-  pg_attribute.attrelid = pg_class.oid AND
-  pg_attribute.attnum = any(pg_index.indkey)
- AND indisprimary"
-x = querySql(connection, sql)
-x
