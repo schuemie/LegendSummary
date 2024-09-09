@@ -13,7 +13,8 @@ comparator = 331100000
 outcome = 6
 
 diagnostics <- readRDS("Diagnostics.rds")
-maDiagnostics <- readRDS("maDiagnostics.rds")
+maDiagnostics <- readRDS("MaDiagnostics.rds")
+maEstimates <- readRDS("MetaAnalysis.rds")
 
 databaseNameToFactor <- function(field, databaseName) {
     return(factor(field, levels = (sort(databaseName))))
@@ -485,13 +486,12 @@ createHeader <- function(target, comparator, outcome, connection) {
 }
 
 createMetaAnalysisTable <- function(target, comparator, outcome, connection) {
-    databaseId <- "Meta-analysis0"
+
     diagnosticsRow <- maDiagnostics |>
         filter(targetId == target,
                comparatorId == comparator,
                outcomeId == outcome,
-               analysisId == 2,
-               databaseId == databaseId)
+               analysisId == 2)
 
     # MDRR -----------------------------------------------------------------------------------------
     vizData <- diagnosticsRow |>
@@ -532,27 +532,12 @@ createMetaAnalysisTable <- function(target, comparator, outcome, connection) {
                                                   sql = "SELECT outcome_id FROM @schema.negative_control_outcome;",
                                                   schema = schema,
                                                   snakeCaseToCamelCase = TRUE)[, 1]
-    sql <- "
-    SELECT database_id,
-        log_rr,
-        se_log_rr
-    FROM @schema.cohort_method_result
-    WHERE target_id = @target
-        AND comparator_id = @comparator
-        AND analysis_id = 2
-        AND outcome_id IN (@negative_control_ids)
-        AND database_id = '@database_id'
-        AND se_log_rr IS NOT NULL;
-    "
-    ncs <- renderTranslateQuerySql(connection = connection,
-                                   sql = sql,
-                                   schema = schema,
-                                   target = target,
-                                   comparator = comparator,
-                                   negative_control_ids = negativeControlIds,
-                                   database_id = databaseId,
-                                   snakeCaseToCamelCase = TRUE)
-    vizData <- ncs |>
+
+    vizData <- maEstimates |>
+        filter(targetId == target,
+               comparatorId == comparator,
+               analysisId == 2,
+               outcomeId %in% negativeControlIds) |>
         mutate(type = "Negative control")
     vizDbData <- diagnosticsRow |>
         mutate(label = sprintf("EASE = %0.2f", ease),
@@ -560,7 +545,7 @@ createMetaAnalysisTable <- function(target, comparator, outcome, connection) {
                slope = 1/1.96)
     breaks <- c(0.5, 1, 2)
     breaksDb <- vizDbData |>
-        select(databaseId) |>
+        # select(databaseId) |>
         cross_join(tibble(x = log(breaks)))
     plotEase <- ggplot(vizData, aes(x = logRr, y = seLogRr)) +
         geom_segment(aes(x = x, y = 0, xend = x, yend = 0.75), data = breaksDb, color = "lightgray") +
@@ -655,27 +640,11 @@ createMetaAnalysisTable <- function(target, comparator, outcome, connection) {
     # plotHeterogeneity
 
     # Estimate -------------------------------------------------------------------------------------
-    sql <- "
-    SELECT database_id,
-      calibrated_rr,
-      calibrated_ci_95_lb,
-      calibrated_ci_95_ub
-    FROM @schema.cohort_method_result
-    WHERE target_id = @target
-        AND comparator_id = @comparator
-        AND analysis_id = 2
-        AND outcome_id = @outcome
-        AND database_id = '@database_id';
-    "
-    hoi <- renderTranslateQuerySql(connection = connection,
-                                   sql = sql,
-                                   schema = schema,
-                                   target = target,
-                                   comparator = comparator,
-                                   outcome = outcome,
-                                   database_id = databaseId,
-                                   snakeCaseToCamelCase = TRUE)
-    vizData <- hoi |>
+    vizData <- maEstimates  |>
+        filter(targetId == target,
+               comparatorId == comparator,
+               outcomeId == outcome,
+               analysisId == 2) |>
         mutate(type = "Calibrated estimate",
                label = if_else(is.na(calibratedRr), NA,
                                sprintf("%0.2f (%0.2f - %0.2f)", calibratedRr, calibratedCi95Lb, calibratedCi95Ub)),
