@@ -6,46 +6,71 @@ format:
     margin-right: 1.5cm
     margin-top: 2cm
     margin-bottom: 1cm
+    mainfont: ArialMT
+params:
+    target: 141100000
+    comparator: 261100000
+    outcome: 3
 header-includes:
   - \pagestyle{empty}
+  - \usepackage{xcolor} 
+  - \definecolor{ohdsiblue}{HTML}{336B91}
 ---
 
 ```{r echo=FALSE,message=FALSE,warning=FALSE}
 library(knitr)
 library(kableExtra)
-target = 141100000 # Sitagliptin
-comparator = 261100000 # Semaglutide
-outcome = 3 # AMI
+
 source("GetConnectionDetails.R")
 source("PlotsAndTableFunctions.R")
 connection <- connect(connectionDetails)
 ```
-## LEGEND-T2DM Evidence Dissemination Summary
+
+\noindent
+  \makebox[\textwidth][c]{
+    \textbf{LEGEND-T2DM Evidence Dissemination Summary}
+  }
+
 
 ```{r echo=FALSE, output="asis"}
-writeLines(createHeader(target, comparator, outcome, connection))
+writeLines(createHeader(params$target, params$comparator, params$outcome, connection))
 ```
 
-**How Often? (Incidence Rates from Target in PS-matched cohorts)**
+\noindent
+\colorbox{ohdsiblue}{
+  \makebox[\textwidth][l]{
+    \textcolor{white}{\textbf{How Often?} (Incidence Rates from Target in PS-matched cohorts)}
+  }
+}
+
 ```{r echo=FALSE}
-table <- createHowOftenTable(target, comparator, outcome, connection)
-kable(table, format = "latex", booktabs = TRUE, escape = TRUE, align = c("l", "r", "r", "r", "r")) %>%
-  kable_styling(latex_options = c("hold_position", "striped")) %>%
-  column_spec(1, width = "3cm", latex_valign = "m") %>%
-  column_spec(2, width = "3cm", latex_valign = "m") %>%
-  column_spec(3, width = "3cm", latex_valign = "m") %>%
-  column_spec(4, width = "3cm", latex_valign = "m") %>%
-  column_spec(5, width = "3cm", latex_valign = "m") 
+table <- createHowOftenTable(params$target, params$comparator, params$outcome, connection)
+kable(table, format = "latex", booktabs = TRUE, linesep = "", escape = TRUE, align = c("l", "r", "r", "r", "r"), longtable = FALSE) %>%
+  kable_styling(latex_options = c("hold_position", "striped", "scale_down"), font_size=11) %>%
+  column_spec(1, width = "4cm", latex_valign = "m") %>%
+  column_spec(2, width = "4cm", latex_valign = "m") %>%
+  column_spec(3, width = "4cm", latex_valign = "m") %>%
+  column_spec(4, width = "4cm", latex_valign = "m") %>%
+  column_spec(5, width = "4cm", latex_valign = "m") 
 ```
 
-**How Reliable Are the Effect Estimates?  (Objective Diagnostics from PS Matching)**
+\noindent
+\colorbox{ohdsiblue}{
+  \makebox[\textwidth][l]{
+    \textcolor{white}{\textbf{How Reliable Are the Effect Estimates?}  (Objective Diagnostics from PS Matching)}
+  }
+}
 ```{r echo=FALSE,fig.width=8.5,fig.height=5,warning=FALSE}
-grid::grid.draw(createDiagnosticsTable(target, comparator, outcome, connection))
+grid::grid.draw(createDiagnosticsTable(params$target, params$comparator, params$outcome, connection))
 ```
-
-**What have we learned from the OHDSI Network?  (composite estimates)**
+\noindent
+\colorbox{ohdsiblue}{
+  \makebox[\textwidth][l]{
+    \textcolor{white}{\textbf{What have we learned from the OHDSI Network?}  (composite estimates)}
+  }
+}
 ```{r echo=FALSE,fig.width=8.5,fig.height=1.5,warning=FALSE}
-grid::grid.draw(createMetaAnalysisTable(target, comparator, outcome, connection))
+grid::grid.draw(createMetaAnalysisTable(params$target, params$comparator, params$outcome, connection))
 ```
 
 ```{r echo=FALSE,message=FALSE,warning=FALSE}

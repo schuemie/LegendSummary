@@ -7,15 +7,13 @@ library(DatabaseConnector)
 target = 141100000 # Sitagliptin
 comparator = 261100000 # Semaglutide
 outcome = 3 # AMI
+
+target = 111100000
+comparator = 331100000
+outcome = 6
+
 diagnostics <- readRDS("Diagnostics.rds")
 maDiagnostics <- readRDS("maDiagnostics.rds")
-
-stringToVars <- function(string) {
-    parts <- as.numeric(unlist(strsplit(gsub("\\{|\\}", "", string), ",")))
-    parts <- as.data.frame(matrix(parts, ncol = 5, byrow = TRUE))
-    colnames(parts) <- c("min", "lower", "median", "upper", "max")
-    return(parts)
-}
 
 databaseNameToFactor <- function(field, databaseName) {
     return(factor(field, levels = (sort(databaseName))))
@@ -26,12 +24,13 @@ renameDatabases <- function(databaseId) {
                               databaseId == "OPENCLAIMS" ~ "Open Claims",
                               databaseId == "OptumDod" ~ "Clinformatics",
                               databaseId == "OptumEHR" ~ "Optum EHR",
+                              databaseId == "VAOMOP" ~ "Veterans Affairs",
                               TRUE ~ databaseId
     )
     return(databaseName)
 }
 # These databases have at least one TCO-analysis pass diagnostics:
-databaseIds <- c("CCAE", "DA_GERMANY", "LPD_FRANCE", "MDCD", "MDCR", "OPENCLAIMS", "OptumDod", "OptumEHR")
+databaseIds <- c("CCAE", "DA_GERMANY", "LPD_FRANCE", "MDCD", "MDCR", "OPENCLAIMS", "OptumDod", "OptumEHR", "VAOMOP")
 databaseNames <- renameDatabases(databaseIds)
 
 createDiagnosticsTable <- function(target, comparator, outcome, connection) {
@@ -80,7 +79,7 @@ createDiagnosticsTable <- function(target, comparator, outcome, connection) {
                origin = 0,
                databaseName = renameDatabases(databaseId))
     vizDbData$databaseName <- databaseNameToFactor(vizDbData$databaseName, databaseNames)
-    labelY <- max(vizData$density, na.rm = TRUE) + 0.5
+    labelY <- max(vizData$density, na.rm = TRUE) + 1
     breaks <- c(0, 0.5, 1)
     breaksDb <- vizDbData |>
         select(databaseName) |>
@@ -111,31 +110,33 @@ createDiagnosticsTable <- function(target, comparator, outcome, connection) {
     # plotEquipoise
 
     # Covariate balance ----------------------------------------------------------------------------
-    sql <- "
-    SELECT database_id,
-      PERCENTILE_DISC(ARRAY[0, 0.25,0.5,0.75,1]) WITHIN GROUP (ORDER BY std_diff_before) AS percentiles_before,
-      PERCENTILE_DISC(ARRAY[0, 0.25,0.5,0.75,1]) WITHIN GROUP (ORDER BY std_diff_after) AS percentiles_after
-    FROM @schema.covariate_balance
-    WHERE target_id = @target
-        AND comparator_id = @comparator
-        AND analysis_id = 5 -- Matching
-        AND outcome_id = 0
-    GROUP BY database_id;
-    "
-    balance <- renderTranslateQuerySql(connection = connection,
-                                       sql = sql,
-                                       schema = schema,
-                                       target = target,
-                                       comparator = comparator,
-                                       snakeCaseToCamelCase = TRUE)
-    vizData <- rbind(cbind(balance,
-                           stringToVars(balance$percentilesBefore),
-                           type = "Before",
-                           y = 1),
-                     cbind(balance,
-                           stringToVars(balance$percentilesAfter),
-                           type = "After matching",
-                           y = .5)) |>
+    vizData <- diagnostics |>
+        filter(targetId == target,
+               comparatorId == comparator,
+               outcomeId == outcome,
+               analysisId == 5,
+               databaseId %in% databaseIds,
+               !is.na(maxAbsStdDiffMean))
+    vizData <- rbind(
+        vizData |>
+            select(databaseId,
+                   min = sdmBeforeMin,
+                   lower = sdmBeforeLower,
+                   median = sdmBeforeMedian,
+                   upper = sdmBeforeUpper,
+                   max = sdmBeforeMax) |>
+            mutate(type = "Before",
+                   y = 1),
+        vizData |>
+            select(databaseId,
+                   min = sdmAfterMin,
+                   lower = sdmAfterLower,
+                   median = sdmAfterMedian,
+                   upper = sdmAfterUpper,
+                   max = sdmAfterMax) |>
+            mutate(type = "After",
+                   y = 0.5)
+    ) |>
         mutate(databaseName = renameDatabases(databaseId))
     vizData <- tibble(databaseName = databaseNames) |>
         left_join(vizData, join_by(databaseName))
@@ -276,7 +277,7 @@ createDiagnosticsTable <- function(target, comparator, outcome, connection) {
                analysisId == 5,
                databaseId %in% databaseIds,
                !is.na(ease)) |>
-        mutate(label = sprintf("Ease = %0.2f", ease),
+        mutate(label = sprintf("EASE = %0.2f", ease),
                origin = 0,
                slope = 1/1.96,
                databaseName = renameDatabases(databaseId))
@@ -372,7 +373,7 @@ createDiagnosticsTable <- function(target, comparator, outcome, connection) {
     # plotEstimate
 
     # Combine plots --------------------------------------------------------------------------------
-    plot <- grid.arrange(plotEquipoise, plotBalance, plotMdrr, plotEase, plotEstimate, ncol = 5, widths = c(1.0, 0.6, 0.33, 0.6, 0.6))
+    plot <- grid.arrange(plotEquipoise, plotBalance, plotMdrr, plotEase, plotEstimate, ncol = 5, widths = c(1.0, 0.6, 0.38, 0.6, 0.6))
     #ggsave("plot.png", plot = plot, width = 8.5, height = 6, dpi = 300)
     return(plot)
 }
@@ -554,7 +555,7 @@ createMetaAnalysisTable <- function(target, comparator, outcome, connection) {
     vizData <- ncs |>
         mutate(type = "Negative control")
     vizDbData <- diagnosticsRow |>
-        mutate(label = sprintf("Ease = %0.2f", ease),
+        mutate(label = sprintf("EASE = %0.2f", ease),
                origin = 0,
                slope = 1/1.96)
     breaks <- c(0.5, 1, 2)
@@ -626,7 +627,7 @@ createMetaAnalysisTable <- function(target, comparator, outcome, connection) {
         mutate(y = -row_number() / n())
 
     vizDbData <- diagnosticsRow |>
-        mutate(label = sprintf("I^2 = %0.2f", i2))
+        mutate(label = sprintf("I^2 == %0.2f", i2))
 
     plotHeterogeneity <- ggplot(vizData, aes(x = log(rr), y = y)) +
         geom_segment(x = log(0.5), y = 0, xend = log(0.5), yend = -1, color = "lightgray") +
@@ -635,7 +636,7 @@ createMetaAnalysisTable <- function(target, comparator, outcome, connection) {
         geom_vline(aes(xintercept = origin)) +
         geom_point(aes(color = type), shape = 16) +
         geom_errorbarh(aes(xmin = log(ci95Lb), xmax = log(ci95Ub), color = type, height = 0.1)) +
-        geom_label(aes(label = label), x = 0, y = 1, vjust = 1, label.size = 0, size = 3, data = vizDbData) +
+        geom_label(aes(label = label), x = 0, y = 1, vjust = 1, label.size = 0, size = 3, parse = TRUE, data = vizDbData) +
         coord_cartesian(xlim = log(c(0.25, 4)), ylim = c(-1, 1)) +
         scale_x_continuous("Hazard ratio", breaks = log(breaks), labels = breaks) +
         scale_color_manual(values = "black", na.translate = FALSE) +

@@ -30,13 +30,13 @@ balance <- renderTranslateQuerySql(connection = connection,
 stringToVars <- function(string, prefix) {
     parts <- as.numeric(unlist(strsplit(gsub("\\{|\\}", "", string), ",")))
     parts <- as.data.frame(matrix(parts, ncol = 5, byrow = TRUE))
-    colnames(parts) <- paste0(prefix, c("min", "lower", "median", "upper", "max"))
+    colnames(parts) <- paste0(prefix, c("Min", "Lower", "Median", "Upper", "Max"))
     return(parts)
 }
 balance <- bind_cols(
     balance,
-    stringToVars(balance$percentilesBefore, "sdm_before_"),
-    stringToVars(balance$percentilesAfter, "sdm_after_")
+    stringToVars(balance$percentilesBefore, "sdmBefore"),
+    stringToVars(balance$percentilesAfter, "sdmAfter")
 ) |>
     select(-percentilesBefore, -percentilesAfter)
 
