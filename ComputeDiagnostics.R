@@ -41,6 +41,8 @@ balance <- bind_cols(
     select(-percentilesBefore, -percentilesAfter)
 
 #saveRDS(balance, "e:/temp/LegendT2dmDiagnostics/balance.rds")
+# balance <- readRDS("e:/temp/LegendT2dmDiagnostics/balance.rds")
+
 
 # Equipoise --------------------------------------------------------------------
 sql <- "
@@ -74,6 +76,7 @@ equipoise <- renderTranslateQuerySql(connection = connection,
                                      max = 0.7,
                                      snakeCaseToCamelCase = TRUE)
 # saveRDS(equipoise, "e:/temp/LegendT2dmDiagnostics/equipoise.rds")
+# equipoise <- readRDS("e:/temp/LegendT2dmDiagnostics/equipoise.rds")
 
 # EASE -------------------------------------------------------------------------
 negativeControlIds <- renderTranslateQuerySql(connection = connection,
@@ -98,6 +101,7 @@ ncEstimates <- renderTranslateQuerySql(connection = connection,
                                        negative_control_ids = negativeControlIds,
                                        snakeCaseToCamelCase = TRUE)
 groups <- ncEstimates |>
+    filter(!grepl("Meta-analysis", databaseId)) |>
     group_by(databaseId, targetId, comparatorId, analysisId) %>%
     group_split()
 
@@ -136,36 +140,17 @@ SELECT database_id,
     CAST(ABS(target_subjects) AS FLOAT) / (ABS(target_subjects) + ABS(comparator_subjects)) AS p_target,
     ABS(target_outcomes) + ABS(comparator_outcomes) AS total_outcomes
 FROM @schema.cohort_method_result
-WHERE outcome_id NOT IN (@negative_control_ids)
-    AND ABS(target_subjects) + ABS(comparator_subjects) != 0;"
+WHERE ABS(target_subjects) + ABS(comparator_subjects) != 0;"
 mdrr <- renderTranslateQuerySql(connection = connection,
                                 sql = sql,
                                 schema = schema,
-                                negative_control_ids = negativeControlIds,
                                 snakeCaseToCamelCase = TRUE)
 mdrr <- mdrr |>
+    filter(!grepl("Meta-analysis", databaseId)) |>
     mutate(pComparator = 1 - pTarget) |>
     mutate(mdrr = exp(sqrt((zBeta + z1MinAlpha)^2/(totalOutcomes * pTarget * pComparator)))) |>
     select(databaseId, targetId, comparatorId, outcomeId, analysisId, mdrr)
 # saveRDS(mdrr, "e:/temp/LegendT2dmDiagnostics/mdrr")
-
-# Database heterogeneity -------------------------------------------------------
-sql <- "
-SELECT database_id,
-    target_id,
-    comparator_id,
-    outcome_id,
-    analysis_id,
-    i_2
-FROM @schema.cohort_method_result
-WHERE outcome_id NOT IN (@negative_control_ids)
-    AND i_2 IS NOT NULL;"
-i2 <- renderTranslateQuerySql(connection = connection,
-                                sql = sql,
-                                schema = schema,
-                                negative_control_ids = negativeControlIds,
-                                snakeCaseToCamelCase = TRUE)
-# saveRDS(i2, "e:/temp/LegendT2dmDiagnostics/i2")
 
 # Join into diagnostics tables -------------------------------------------------
 
@@ -194,8 +179,6 @@ mdrr <- mdrr |>
     filter(analysisId < 10)
 ease <- ease |>
     filter(analysisId < 10)
-i2 <- i2 |>
-    filter(analysisId < 10)
 
 
 # Combine diagnostics into single table:
@@ -223,21 +206,6 @@ diagnostics |>
 writeLines(paste(sort(unique(diagnostics$databaseId[diagnostics$unblind])), collapse = "\", \""))
 
 saveRDS(diagnostics, "Diagnostics.rds")
-
-maDiagnostics <- mdrr |>
-    full_join(i2,
-              by = join_by(databaseId, targetId, comparatorId, outcomeId, analysisId)) |>
-    full_join(ease,
-              by = join_by(databaseId, targetId, comparatorId, analysisId)) |>
-    filter(grepl("Meta-analysis", databaseId)) |>
-    mutate(unblind = !is.na(i2) &
-               !is.na(mdrr) &
-               !is.na(ease) &
-               i2 < 0.45 &
-               mdrr < 4 &
-               ease < 0.25)
-
-saveRDS(maDiagnostics, "MaDiagnostics.rds")
 
 # Disconnect -------------------------------------------------------------------
 disconnect(connection)

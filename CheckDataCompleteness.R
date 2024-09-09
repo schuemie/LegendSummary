@@ -47,12 +47,14 @@ tcs <- hoiEstimates |>
     distinct(databaseId, targetId, comparatorId)
 
 # Balance ----------------------------------------------------------------------
+# Restricting to analysis 5 which corresponds to 2 as well:
 sql <- "
 SELECT DISTINCT database_id,
     target_id,
     comparator_id
 FROM @schema.covariate_balance
-WHERE outcome_id = 0;
+WHERE outcome_id = 0
+    AND analysis_id = 5;
 "
 balanceTcs <- renderTranslateQuerySql(connection = connection,
                                       sql = sql,
@@ -78,7 +80,8 @@ SELECT DISTINCT database_id,
     target_id,
     comparator_id
 FROM @schema.propensity_model
-WHERE covariate_id != 0;
+WHERE covariate_id != 0
+    AND analysis_id = 2;
 "
 modelTcs <- renderTranslateQuerySql(connection = connection,
                                     sql = sql,
@@ -96,7 +99,8 @@ sql <- "
 SELECT DISTINCT database_id,
     target_id,
     comparator_id
-FROM @schema.preference_score_dist;
+FROM @schema.preference_score_dist
+WHERE analysis_id = 2;
 "
 psTcs <- renderTranslateQuerySql(connection = connection,
                                  sql = sql,
