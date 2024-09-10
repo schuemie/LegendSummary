@@ -40,9 +40,8 @@ balance <- bind_cols(
 ) |>
     select(-percentilesBefore, -percentilesAfter)
 
-#saveRDS(balance, "e:/temp/LegendT2dmDiagnostics/balance.rds")
+# saveRDS(balance, "e:/temp/LegendT2dmDiagnostics/balance.rds")
 # balance <- readRDS("e:/temp/LegendT2dmDiagnostics/balance.rds")
-
 
 # Equipoise --------------------------------------------------------------------
 sql <- "
@@ -209,4 +208,3 @@ saveRDS(diagnostics, "Diagnostics.rds")
 
 # Disconnect -------------------------------------------------------------------
 disconnect(connection)
-

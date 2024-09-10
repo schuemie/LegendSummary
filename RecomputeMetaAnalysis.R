@@ -33,8 +33,7 @@ SELECT database_id,
     log_rr,
     se_log_rr
 FROM @schema.cohort_method_result
-WHERE se_log_rr IS NOT NULL
-    AND analysis_id = 2;
+WHERE se_log_rr IS NOT NULL;
 "
 estimates <- renderTranslateQuerySql(connection = connection,
                                      sql = sql,
@@ -161,15 +160,14 @@ computeGroupMetaAnalysis <- function(group,
     return(groupResults)
 }
 
-
-cluster <- ParallelLogger::makeCluster(15)
+cluster <- ParallelLogger::makeCluster(12)
 results <- ParallelLogger::clusterApply(cluster,
                                         groups,
                                         computeGroupMetaAnalysis)
 ParallelLogger::stopCluster(cluster)
 results <- bind_rows(results)
 
-# Compute diagnostics ------------------------------
+# Compute meta-analysis diagnostics --------------------------------------------
 computeMdrrFromSe <- function(seLogRr, alpha = 0.05, power = 0.8) {
     # Based on the computation of a two-sided p-value, power can be computed as
     # power = 1-pnorm(qnorm(1 - alpha/2) - (log(mdrr) / seLogRr))/2
