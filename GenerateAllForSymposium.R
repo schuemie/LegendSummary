@@ -62,6 +62,7 @@ tcos <- querySql(connection = connection,
                  snakeCaseToCamelCase = TRUE)
 
 # Test on a sample -----------------------------------------------------------------------
+set.seed(0)
 sampleSize <- 10
 tcoSample <- tcos[sample.int(nrow(tcos), sampleSize), ]
 

@@ -8,9 +8,9 @@ target = 141100000 # Sitagliptin
 comparator = 261100000 # Semaglutide
 outcome = 3 # AMI
 
-target = 111100000
-comparator = 331100000
-outcome = 6
+target = 131100000
+comparator = 141100000
+outcome = 34
 
 diagnostics <- readRDS("Diagnostics.rds")
 maDiagnostics <- readRDS("MaDiagnostics.rds")
@@ -20,12 +20,15 @@ databaseNameToFactor <- function(field, databaseName) {
     return(factor(field, levels = (sort(databaseName))))
 }
 renameDatabases <- function(databaseId) {
-    databaseName <- case_when(databaseId == "DA_GERMANY" ~ "DA Germany",
-                              databaseId == "LPD_FRANCE" ~ "LDP France",
-                              databaseId == "OPENCLAIMS" ~ "Open Claims",
-                              databaseId == "OptumDod" ~ "Clinformatics",
+    databaseName <- case_when(databaseId == "DA_GERMANY" ~ "IQVIA DA Germany",
+                              databaseId == "LPD_FRANCE" ~ "IQVIA LDP France",
+                              databaseId == "OPENCLAIMS" ~ "IQVIA Open Claims",
+                              databaseId == "OptumDod" ~ "Optum Clinformatics",
                               databaseId == "OptumEHR" ~ "Optum EHR",
                               databaseId == "VAOMOP" ~ "Veterans Affairs",
+                              databaseId == "CCAE" ~ "Merative CCAE",
+                              databaseId == "MDCD" ~ "Merative MDCD",
+                              databaseId == "MDCR" ~ "Merative MDCR",
                               TRUE ~ databaseId
     )
     return(databaseName)
@@ -35,6 +38,69 @@ databaseIds <- c("CCAE", "DA_GERMANY", "LPD_FRANCE", "MDCD", "MDCR", "OPENCLAIMS
 databaseNames <- renameDatabases(databaseIds)
 
 createDiagnosticsTable <- function(target, comparator, outcome, connection) {
+
+    # Estimate -------------------------------------------------------------------------------------
+    sql <- "
+    SELECT database_id,
+      calibrated_rr,
+      calibrated_ci_95_lb,
+      calibrated_ci_95_ub
+    FROM @schema.cohort_method_result
+    WHERE target_id = @target
+        AND comparator_id = @comparator
+        AND analysis_id = 2
+        AND outcome_id = @outcome;
+    "
+    hoi <- renderTranslateQuerySql(connection = connection,
+                                   sql = sql,
+                                   schema = schema,
+                                   target = target,
+                                   comparator = comparator,
+                                   outcome = outcome,
+                                   snakeCaseToCamelCase = TRUE)
+    databaseIdsWithValidEstimates <- hoi |>
+        filter(databaseId %in% databaseIds,
+               !is.na(calibratedRr)) |>
+        pull(databaseId)
+    vizData <- hoi |>
+        filter(databaseId %in% databaseIdsWithValidEstimates) |>
+        mutate(type = "Calibrated estimate",
+               label = if_else(is.na(calibratedRr), NA,
+                               sprintf("%0.2f (%0.2f - %0.2f)", calibratedRr, calibratedCi95Lb, calibratedCi95Ub)),
+               origin = 0,
+               databaseName = renameDatabases(databaseId))
+    vizData <- tibble(databaseName = databaseNames) |>
+        left_join(vizData, by = join_by(databaseName))
+    vizData$databaseName <- databaseNameToFactor(vizData$databaseName, databaseNames)
+
+    breaks <- c(0.5, 1, 2)
+    breaksDb <- vizData |>
+        filter(!is.na(calibratedRr)) |>
+        select(databaseName) |>
+        cross_join(tibble(x = log(breaks)))
+    plotEstimate <- ggplot(vizData, aes(x = log(calibratedRr))) +
+        geom_segment(aes(x = x, y = 0, xend = x, yend = -1), data = breaksDb, color = "lightgray") +
+        geom_vline(aes(xintercept = origin)) +
+        geom_point(aes(color = type), shape = 16, y = -0.5) +
+        geom_errorbarh(aes(xmin = log(calibratedCi95Lb), xmax = log(calibratedCi95Ub), color = type, y = -0.5, height = 0.5)) +
+        geom_label(aes(label = label), x = 0, y = 1, vjust = 1, label.size = 0, size = 3) +
+        coord_cartesian(xlim = log(c(0.25, 4)), ylim = c(-1, 1)) +
+        scale_x_continuous("Hazard ratio", breaks = log(breaks), labels = breaks) +
+        scale_color_manual(values = "black", na.translate = FALSE) +
+        facet_grid(databaseName~., switch = "y") +
+        theme(
+            axis.text.y = element_blank(),
+            axis.title.y = element_blank(),
+            axis.ticks.y = element_blank(),
+            panel.grid = element_blank(),
+            panel.background = element_blank(),
+            strip.background = element_blank(),
+            strip.text.y.left = element_blank(),
+            legend.position = "top",
+            legend.title = element_blank(),
+            legend.key.size = unit(0.25, "cm")
+        )
+    # plotEstimate
 
     # Equipoise ------------------------------------------------------------------------------------
     sql <- "
@@ -63,7 +129,15 @@ createDiagnosticsTable <- function(target, comparator, outcome, connection) {
                                     preferenceScore,
                                     density = comparatorDensity) |>
                              mutate(type = "Comparator")) |>
+        filter(databaseId %in% databaseIdsWithValidEstimates) |>
         mutate(databaseName = renameDatabases(databaseId))
+    # Normalize density (per database)
+    vizData <- vizData |> inner_join(vizData |>
+                              group_by(databaseName) |>
+                              summarise(maxDensity = max(density)),
+                          by = join_by(databaseName)) |>
+        mutate(density = density / maxDensity)
+
     vizData <- tibble(databaseName = databaseNames) |>
         left_join(vizData, by = join_by(databaseName))
     vizData$databaseName <- databaseNameToFactor(vizData$databaseName, databaseNames)
@@ -74,7 +148,7 @@ createDiagnosticsTable <- function(target, comparator, outcome, connection) {
                comparatorId == comparator,
                outcomeId == outcome,
                analysisId == 5,
-               databaseId %in% databaseIds,
+               databaseId %in% databaseIdsWithValidEstimates,
                !is.na(minEquipoise)) |>
         mutate(label = sprintf("Equipoise = %0.2f", minEquipoise),
                origin = 0,
@@ -116,25 +190,25 @@ createDiagnosticsTable <- function(target, comparator, outcome, connection) {
                comparatorId == comparator,
                outcomeId == outcome,
                analysisId == 5,
-               databaseId %in% databaseIds,
+               databaseId %in% databaseIdsWithValidEstimates,
                !is.na(maxAbsStdDiffMean))
     vizData <- rbind(
         vizData |>
             select(databaseId,
-                   min = sdmBeforeMin,
-                   lower = sdmBeforeLower,
-                   median = sdmBeforeMedian,
-                   upper = sdmBeforeUpper,
-                   max = sdmBeforeMax) |>
+                   min = asdmBeforeMin,
+                   lower = asdmBeforeLower,
+                   median = asdmBeforeMedian,
+                   upper = asdmBeforeUpper,
+                   max = asdmBeforeMax) |>
             mutate(type = "Before",
                    y = 1),
         vizData |>
             select(databaseId,
-                   min = sdmAfterMin,
-                   lower = sdmAfterLower,
-                   median = sdmAfterMedian,
-                   upper = sdmAfterUpper,
-                   max = sdmAfterMax) |>
+                   min = asdmAfterMin,
+                   lower = asdmAfterLower,
+                   median = asdmAfterMedian,
+                   upper = asdmAfterUpper,
+                   max = asdmAfterMax) |>
             mutate(type = "After",
                    y = 0.5)
     ) |>
@@ -149,18 +223,19 @@ createDiagnosticsTable <- function(target, comparator, outcome, connection) {
                comparatorId == comparator,
                outcomeId == outcome,
                analysisId == 5,
-               databaseId %in% databaseIds,
+               databaseId %in% databaseIdsWithValidEstimates,
                !is.na(maxAbsStdDiffMean)) |>
         mutate(label = sprintf("Max ASDM = %0.2f", maxAbsStdDiffMean),
                origin = 0,
-               minX = -0.15,
+               minX = 0,
                maxX = 0.15,
                median = 0,
                y = 0,
                databaseName = renameDatabases(databaseId))
     vizDbData$databaseName <- databaseNameToFactor(vizDbData$databaseName, databaseNames)
 
-    breaks <- c(-0.5, 0, 0.5)
+    breaks <- c(0, 0.15, 0.5, 1)
+    breakLabels = c("0", "0.15", "0.5", "1")
     breaksDb <- vizDbData |>
         select(databaseName) |>
         cross_join(tibble(x = breaks))
@@ -174,9 +249,9 @@ createDiagnosticsTable <- function(target, comparator, outcome, connection) {
         geom_errorbarh(aes(xmin = min, xmax = max, color = type), height = boxPlotHeight*2) +
         geom_rect(aes(xmin = lower, ymin=y-boxPlotHeight, xmax = upper, ymax = y+boxPlotHeight, color = type, fill = type)) +
         geom_segment(aes(x = median, y = y-boxPlotHeight, xend = median, yend = y+boxPlotHeight, color = type), size = 1) +
-        geom_label(aes(label = label), x = 0, y = 2, vjust = 1, label.size = 0, size = 3, data = vizDbData) +
-        coord_cartesian(xlim = c(-1, 1), ylim = c(0.25, 2)) +
-        scale_x_continuous("Std. diff. means", breaks = breaks) +
+        geom_label(aes(label = label), x = 0.5, y = 2, vjust = 1, label.size = 0, size = 3, data = vizDbData) +
+        coord_cartesian(xlim = c(0, 1), ylim = c(0.25, 2)) +
+        scale_x_continuous("ASDM", breaks = breaks, labels = breakLabels) +
         scale_color_manual(values = c(alpha("#e5ae38", 0.6), alpha("#6d904f", 0.6)), na.translate = FALSE) +
         scale_fill_manual(values = c(alpha("#e5ae38", 0.6), alpha("#6d904f", 0.6)), na.translate = FALSE) +
         facet_grid(databaseName~., switch = "y") +
@@ -200,7 +275,7 @@ createDiagnosticsTable <- function(target, comparator, outcome, connection) {
                comparatorId == comparator,
                outcomeId == outcome,
                analysisId == 2,
-               databaseId %in% databaseIds,
+               databaseId %in% databaseIdsWithValidEstimates,
                !is.na(mdrr)) |>
         mutate(label = sprintf("MDRR = %0.1f", mdrr),
                origin = 1,
@@ -264,7 +339,7 @@ createDiagnosticsTable <- function(target, comparator, outcome, connection) {
                                    negative_control_ids = negativeControlIds,
                                    snakeCaseToCamelCase = TRUE)
     vizData <- ncs |>
-        filter(!grepl("Meta-analysis", databaseId)) |>
+        filter(databaseId %in% databaseIdsWithValidEstimates) |>
         mutate(type = "Negative control",
                databaseName = renameDatabases(databaseId))
     vizData <- tibble(databaseName = databaseNames) |>
@@ -276,7 +351,7 @@ createDiagnosticsTable <- function(target, comparator, outcome, connection) {
                comparatorId == comparator,
                outcomeId == outcome,
                analysisId == 5,
-               databaseId %in% databaseIds,
+               databaseId %in% databaseIdsWithValidEstimates,
                !is.na(ease)) |>
         mutate(label = sprintf("EASE = %0.2f", ease),
                origin = 0,
@@ -312,66 +387,6 @@ createDiagnosticsTable <- function(target, comparator, outcome, connection) {
             legend.key.size = unit(0.25, "cm")
         )
     # plotEase
-
-    # Estimate -------------------------------------------------------------------------------------
-    sql <- "
-    SELECT database_id,
-      calibrated_rr,
-      calibrated_ci_95_lb,
-      calibrated_ci_95_ub
-    FROM @schema.cohort_method_result
-    WHERE target_id = @target
-        AND comparator_id = @comparator
-        AND analysis_id = 2
-        AND outcome_id = @outcome;
-    "
-    hoi <- renderTranslateQuerySql(connection = connection,
-                                   sql = sql,
-                                   schema = schema,
-                                   target = target,
-                                   comparator = comparator,
-                                   outcome = outcome,
-                                   snakeCaseToCamelCase = TRUE)
-    vizData <- hoi |>
-        filter(!grepl("Meta-analysis", databaseId),
-               !is.na(calibratedRr)) |>
-        mutate(type = "Calibrated estimate",
-               label = if_else(is.na(calibratedRr), NA,
-                               sprintf("%0.2f (%0.2f - %0.2f)", calibratedRr, calibratedCi95Lb, calibratedCi95Ub)),
-               origin = 0,
-               databaseName = renameDatabases(databaseId))
-    vizData <- tibble(databaseName = databaseNames) |>
-        left_join(vizData, by = join_by(databaseName))
-    vizData$databaseName <- databaseNameToFactor(vizData$databaseName, databaseNames)
-
-    breaks <- c(0.5, 1, 2)
-    breaksDb <- vizData |>
-        filter(!is.na(calibratedRr)) |>
-        select(databaseName) |>
-        cross_join(tibble(x = log(breaks)))
-    plotEstimate <- ggplot(vizData, aes(x = log(calibratedRr))) +
-        geom_segment(aes(x = x, y = 0, xend = x, yend = -1), data = breaksDb, color = "lightgray") +
-        geom_vline(aes(xintercept = origin)) +
-        geom_point(aes(color = type), shape = 16, y = -0.5) +
-        geom_errorbarh(aes(xmin = log(calibratedCi95Lb), xmax = log(calibratedCi95Ub), color = type, y = -0.5, height = 0.5)) +
-        geom_label(aes(label = label), x = 0, y = 1, vjust = 1, label.size = 0, size = 3) +
-        coord_cartesian(xlim = log(c(0.25, 4)), ylim = c(-1, 1)) +
-        scale_x_continuous("Hazard ratio", breaks = log(breaks), labels = breaks) +
-        scale_color_manual(values = "black", na.translate = FALSE) +
-        facet_grid(databaseName~., switch = "y") +
-        theme(
-            axis.text.y = element_blank(),
-            axis.title.y = element_blank(),
-            axis.ticks.y = element_blank(),
-            panel.grid = element_blank(),
-            panel.background = element_blank(),
-            strip.background = element_blank(),
-            strip.text.y.left = element_blank(),
-            legend.position = "top",
-            legend.title = element_blank(),
-            legend.key.size = unit(0.25, "cm")
-        )
-    # plotEstimate
 
     # Combine plots --------------------------------------------------------------------------------
     plot <- grid.arrange(plotEquipoise, plotBalance, plotMdrr, plotEase, plotEstimate, ncol = 5, widths = c(1.0, 0.6, 0.38, 0.6, 0.6))
@@ -412,13 +427,13 @@ createHowOftenTable <- function(target, comparator, outcome, connection) {
                years = gsub("-", "<", years),
                targetOutcomes = gsub("-", "<", targetOutcomes),
                ir = gsub("-", "<", ir)) |>
-        mutate(targetSubjects = gsub("NA", "-", targetSubjects),
-               years = gsub("NA", "-", years),
-               targetOutcomes = gsub("NA", "-", targetOutcomes),
-               ir = gsub("NA", "-", ir)) |>
+        mutate(targetSubjects = gsub("NA|^0|NaN", "-", targetSubjects),
+               years = gsub("NA|^0|NaN", "-", years),
+               targetOutcomes = gsub("NA|^0|NaN", "-", targetOutcomes),
+               ir = gsub("NA|^0|NaN", "-", ir)) |>
         select(databaseName, targetSubjects, years, targetOutcomes, ir) |>
         arrange(databaseName)
-    colnames(counts) <- c("Data source", "Persons exposed", "Person-time (yrs)", "Nr. of outcomes", "IR (/1,000 PY)")
+    colnames(counts) <- c("Data source", "Persons exposed", "Person-time (yrs)", "Persons with outcome", "IR (/1,000 PY)")
     return(counts)
 }
 
@@ -473,15 +488,14 @@ createHeader <- function(target, comparator, outcome, connection) {
                                            schema = schema,
                                            outcome_id = outcome,
                                            snakeCaseToCamelCase = TRUE)[1, 1]
-    subgroup <- subgroups$label[which(sapply(subgroups$abbr, grepl, x = targetName, fixed = TRUE))]
+    # subgroup <- subgroups$label[which(sapply(subgroups$abbr, grepl, x = targetName, fixed = TRUE))]
     targetName <- trimws(gsub(paste(subgroups$abbr, collapse = "|"), "", targetName))
     comparatorName <- trimws(gsub(paste(subgroups$abbr, collapse = "|"), "", comparatorName))
     outcomeName <- gsub("outcome/", "", gsub("_", " ", outcomeName))
-    header <- sprintf("Target: **%s**, Comparator: **%s**\nOutcome: **%s**\n Subgroup: **%s**",
+    header <- sprintf("Target: **%s**, Comparator: **%s**\nOutcome: **%s**",
                       targetName,
                       comparatorName,
-                      outcomeName,
-                      subgroup)
+                      outcomeName)
     return(header)
 }
 
