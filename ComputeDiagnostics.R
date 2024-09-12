@@ -12,8 +12,8 @@ SELECT database_id,
     target_id,
     comparator_id,
     analysis_id,
-    PERCENTILE_DISC(ARRAY[0, 0.25,0.5,0.75,1]) WITHIN GROUP (ORDER BY std_diff_before) AS percentiles_before,
-    PERCENTILE_DISC(ARRAY[0, 0.25,0.5,0.75,1]) WITHIN GROUP (ORDER BY std_diff_after) AS percentiles_after,
+    PERCENTILE_DISC(ARRAY[0, 0.25,0.5,0.75,1]) WITHIN GROUP (ORDER BY ABS(std_diff_before)) AS percentiles_before,
+    PERCENTILE_DISC(ARRAY[0, 0.25,0.5,0.75,1]) WITHIN GROUP (ORDER BY ABS(std_diff_after)) AS percentiles_after,
     MAX(ABS(std_diff_after)) AS max_abs_std_diff_mean
 FROM @schema.covariate_balance
 WHERE outcome_id = 0
@@ -35,8 +35,8 @@ stringToVars <- function(string, prefix) {
 }
 balance <- bind_cols(
     balance,
-    stringToVars(balance$percentilesBefore, "sdmBefore"),
-    stringToVars(balance$percentilesAfter, "sdmAfter")
+    stringToVars(balance$percentilesBefore, "asdmBefore"),
+    stringToVars(balance$percentilesAfter, "asdmAfter")
 ) |>
     select(-percentilesBefore, -percentilesAfter)
 
@@ -150,6 +150,7 @@ mdrr <- mdrr |>
     mutate(mdrr = exp(sqrt((zBeta + z1MinAlpha)^2/(totalOutcomes * pTarget * pComparator)))) |>
     select(databaseId, targetId, comparatorId, outcomeId, analysisId, mdrr)
 # saveRDS(mdrr, "e:/temp/LegendT2dmDiagnostics/mdrr")
+# mdrr <- readRDS("e:/temp/LegendT2dmDiagnostics/mdrr")
 
 # Join into diagnostics tables -------------------------------------------------
 
