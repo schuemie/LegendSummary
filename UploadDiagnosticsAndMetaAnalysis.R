@@ -23,7 +23,8 @@ insertTable(connection = connection,
 maDiagnostics <- readRDS("MaDiagnostics.rds")
 maDiagnostics <- maDiagnostics |>
     mutate(unblind = as.integer(unblind),
-           mdrr = if_else(is.infinite(mdrr), 999, mdrr))
+           mdrr = if_else(is.infinite(mdrr), 999, mdrr),
+           databaseId = "meta-analysis5")
 insertTable(connection = connection,
             databaseSchema = schema,
             tableName = "diagnostics_meta_analysis_martijn",
@@ -72,3 +73,7 @@ oldCount <- renderTranslateQuerySql(connection = connection,
                                     schema = schema)[1, 1]
 (newCount-oldCount) == nrow(maEstimates)
 # TRUE
+
+# Disconnect -------------------------------------------------------------------
+
+disconnect(connection)
