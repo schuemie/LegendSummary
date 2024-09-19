@@ -88,3 +88,17 @@ message("Generating PDFs took ", signif(delta, 3), " ", attr(delta, "units"))
 
 setwd(oldWd)
 
+
+# Merge PDFs ---------------------------------------------------------------------------------------
+library(qpdf)
+pdfFiles <- list.files("handouts", "*.pdf")
+
+batchSize <- 100
+numFiles <- length(pdfFiles)
+for (start in seq(1, numFiles, by = batchSize)) {
+    end <- min(start + batchSize - 1, numFiles)
+    batch <- pdfFiles[start:end]
+
+    pdf_combine(input = file.path("handouts", batch),
+                output = file.path("handouts", "combined", sprintf("Combined%d_%d.pdf", start, end)))
+}
