@@ -133,9 +133,9 @@ createDiagnosticsTable <- function(target, comparator, outcome, connection) {
         mutate(databaseName = renameDatabases(databaseId))
     # Normalize density (per database)
     vizData <- vizData |> inner_join(vizData |>
-                              group_by(databaseName) |>
-                              summarise(maxDensity = max(density)),
-                          by = join_by(databaseName)) |>
+                                         group_by(databaseName) |>
+                                         summarise(maxDensity = max(density)),
+                                     by = join_by(databaseName)) |>
         mutate(density = density / maxDensity)
 
     vizData <- tibble(databaseName = databaseNames) |>
@@ -464,20 +464,25 @@ subgroups <- tibble(
 
 createHeader <- function(target, comparator, outcome, connection) {
     sql <- "
-    SELECT exposure_name
+    SELECT exposure_name,
+        CASE WHEN exposure_name ILIKE '%gliptin%' THEN 'DPP-4 inhibitors'
+            WHEN exposure_name ILIKE '%flozin%' THEN 'SGLT2 Inhibitors'
+            WHEN exposure_name ILIKE '%tide%' THEN 'GLP-1 Receptor Agonists'
+            ELSE 'Sulfonylureas'
+        END as class_name
     FROM @schema.exposure_of_interest
     WHERE exposure_id = @exposure_id;
     "
-    targetName <- renderTranslateQuerySql(connection = connection,
-                                          sql = sql,
-                                          schema = schema,
-                                          exposure_id = target,
-                                          snakeCaseToCamelCase = TRUE)[1, 1]
-    comparatorName <- renderTranslateQuerySql(connection = connection,
-                                              sql = sql,
-                                              schema = schema,
-                                              exposure_id = comparator,
-                                              snakeCaseToCamelCase = TRUE)[1, 1]
+    targetNames <- renderTranslateQuerySql(connection = connection,
+                                           sql = sql,
+                                           schema = schema,
+                                           exposure_id = target,
+                                           snakeCaseToCamelCase = TRUE)
+    comparatorNames <- renderTranslateQuerySql(connection = connection,
+                                               sql = sql,
+                                               schema = schema,
+                                               exposure_id = comparator,
+                                               snakeCaseToCamelCase = TRUE)
     sql <- "
     SELECT outcome_name
     FROM @schema.outcome_of_interest
@@ -488,13 +493,17 @@ createHeader <- function(target, comparator, outcome, connection) {
                                            schema = schema,
                                            outcome_id = outcome,
                                            snakeCaseToCamelCase = TRUE)[1, 1]
-    # subgroup <- subgroups$label[which(sapply(subgroups$abbr, grepl, x = targetName, fixed = TRUE))]
-    targetName <- trimws(gsub(paste(subgroups$abbr, collapse = "|"), "", targetName))
-    comparatorName <- trimws(gsub(paste(subgroups$abbr, collapse = "|"), "", comparatorName))
+    # subgroup <- subgroups$label[which(sapply(subgroups$abbr, grepl, x = targetNames[1, 1], fixed = TRUE))]
+    targetName <- trimws(gsub(paste(subgroups$abbr, collapse = "|"), "", targetNames[1, 1]))
+    comparatorName <- trimws(gsub(paste(subgroups$abbr, collapse = "|"), "", comparatorNames[1, 1]))
+    targetClass <- targetNames[1, 2]
+    comparatorClass <- comparatorNames[1, 2]
     outcomeName <- gsub("outcome/", "", gsub("_", " ", outcomeName))
-    header <- sprintf("Target: **%s**, Comparator: **%s**\nOutcome: **%s**",
+    header <- sprintf("- Target (class): **%s** (%s)\n- Comparator (class): **%s** (%s)\n- Outcome: **%s**",
                       targetName,
+                      targetClass,
                       comparatorName,
+                      comparatorClass,
                       outcomeName)
     return(header)
 }

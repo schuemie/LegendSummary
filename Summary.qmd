@@ -1,11 +1,12 @@
 ---
 format: 
   pdf:
+    papersize: letter
     page-layout: full
     margin-left: 1.5cm
     margin-right: 1.5cm
-    margin-top: 2cm
-    margin-bottom: 1cm
+    margin-top: 1.5cm
+    margin-bottom: 1.5cm
     mainfont: ArialMT
 params:
     target: 141100000
@@ -76,3 +77,4 @@ grid::grid.draw(createMetaAnalysisTable(params$target, params$comparator, params
 ```{r echo=FALSE,message=FALSE,warning=FALSE}
 disconnect(connection)
 ```
+
