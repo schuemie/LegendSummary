@@ -94,6 +94,7 @@ createDiagnosticsTable <- function(target, comparator, outcome, connection) {
             axis.ticks.y = element_blank(),
             panel.grid = element_blank(),
             panel.background = element_blank(),
+            panel.spacing = unit(0, "lines"),
             strip.background = element_blank(),
             strip.text.y.left = element_blank(),
             legend.position = "top",
@@ -176,6 +177,7 @@ createDiagnosticsTable <- function(target, comparator, outcome, connection) {
             axis.ticks.y = element_blank(),
             panel.grid = element_blank(),
             panel.background = element_blank(),
+            panel.spacing = unit(0, "lines"),
             strip.background = element_blank(),
             strip.text.y.left = element_text(angle = 0, hjust = 1),
             legend.position = "top",
@@ -261,6 +263,7 @@ createDiagnosticsTable <- function(target, comparator, outcome, connection) {
             axis.ticks.y = element_blank(),
             panel.grid = element_blank(),
             panel.background = element_blank(),
+            panel.spacing = unit(0, "lines"),
             strip.background = element_blank(),
             strip.text.y.left = element_blank(),
             legend.position = "top",
@@ -307,6 +310,7 @@ createDiagnosticsTable <- function(target, comparator, outcome, connection) {
             axis.ticks.y = element_blank(),
             panel.grid = element_blank(),
             panel.background = element_blank(),
+            panel.spacing = unit(0, "lines"),
             strip.background = element_blank(),
             strip.text.y.left = element_blank(),
             legend.position = "top",
@@ -380,6 +384,7 @@ createDiagnosticsTable <- function(target, comparator, outcome, connection) {
             axis.ticks.y = element_blank(),
             panel.grid = element_blank(),
             panel.background = element_blank(),
+            panel.spacing = unit(0, "lines"),
             strip.background = element_blank(),
             strip.text.y.left = element_blank(),
             legend.position = "top",
@@ -389,7 +394,7 @@ createDiagnosticsTable <- function(target, comparator, outcome, connection) {
     # plotEase
 
     # Combine plots --------------------------------------------------------------------------------
-    plot <- grid.arrange(plotEquipoise, plotBalance, plotMdrr, plotEase, plotEstimate, ncol = 5, widths = c(1.0, 0.6, 0.38, 0.6, 0.6))
+    plot <- grid.arrange(plotEquipoise, plotBalance, plotMdrr, plotEase, plotEstimate, ncol = 5, widths = c(1.1, 0.6, 0.38, 0.6, 0.6))
     #ggsave("plot.png", plot = plot, width = 8.5, height = 6, dpi = 300)
     return(plot)
 }
@@ -462,6 +467,11 @@ subgroups <- tibble(
               "With renal impairment"),
 )
 
+firstUp <- function(string) {
+    substr(string, 1, 1) <- toupper(substr(string, 1, 1))
+    return(string)
+}
+
 createHeader <- function(target, comparator, outcome, connection) {
     sql <- "
     SELECT exposure_name,
@@ -494,12 +504,12 @@ createHeader <- function(target, comparator, outcome, connection) {
                                            outcome_id = outcome,
                                            snakeCaseToCamelCase = TRUE)[1, 1]
     # subgroup <- subgroups$label[which(sapply(subgroups$abbr, grepl, x = targetNames[1, 1], fixed = TRUE))]
-    targetName <- trimws(gsub(paste(subgroups$abbr, collapse = "|"), "", targetNames[1, 1]))
-    comparatorName <- trimws(gsub(paste(subgroups$abbr, collapse = "|"), "", comparatorNames[1, 1]))
+    targetName <- firstUp(trimws(gsub(paste(subgroups$abbr, collapse = "|"), "", targetNames[1, 1])))
+    comparatorName <- firstUp(trimws(gsub(paste(subgroups$abbr, collapse = "|"), "", comparatorNames[1, 1])))
     targetClass <- targetNames[1, 2]
     comparatorClass <- comparatorNames[1, 2]
     outcomeName <- gsub("outcome/", "", gsub("_", " ", outcomeName))
-    header <- sprintf("- Target (class): **%s** (%s)\n- Comparator (class): **%s** (%s)\n- Outcome: **%s**",
+    header <- sprintf("- Target (class):\t**%s** (%s)\n- Comparator (class):\t**%s** (%s)\n- Outcome:\t**%s**",
                       targetName,
                       targetClass,
                       comparatorName,
@@ -700,6 +710,6 @@ createMetaAnalysisTable <- function(target, comparator, outcome, connection) {
 
     # Combine plots --------------------------------------------------------------------------------
     plot <- grid.arrange(plotMdrr, plotEase, plotHeterogeneity, plotEstimate, ncol = 4, widths = c(1, 0.6, 0.6, 0.6))
-    ggsave("plotMa.png", plot = plot, width = 8.5, height = 1.5, dpi = 300)
+    #ggsave("plotMa.png", plot = plot, width = 8.5, height = 1.5, dpi = 300)
     return(plot)
 }

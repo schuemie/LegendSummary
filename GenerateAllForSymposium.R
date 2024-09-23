@@ -106,6 +106,32 @@ message("Generating PDFs took ", signif(delta, 3), " ", attr(delta, "units"))
 
 setwd(oldWd)
 
+# Render all -------------------------------------------------------------------
+oldWd <- setwd("handouts")
+
+start <- Sys.time()
+for (i in seq_len(nrow(tcos))) {
+    tco <- tcos[i, ]
+    fileName <- sprintf("Summary_t%d_c%d_o%d.pdf",
+                        tco$targetId,
+                        tco$comparatorId,
+                        tco$outcomeId)
+    if (!file.exists(fileName)) {
+        writeLines(sprintf("*** Generating %d of %s ***", i, nrow(tcos)))
+        quarto::quarto_render(input = "../Summary.qmd",
+                              output_format = "pdf",
+                              output_file = fileName,
+                              execute_params = list(target = tco$targetId,
+                                                    comparator = tco$comparatorId,
+                                                    outcome = tco$outcomeId))
+    }
+}
+delta <- Sys.time() - start
+message("Generating PDFs took ", signif(delta, 3), " ", attr(delta, "units"))
+
+setwd(oldWd)
+
+
 
 # Merge PDFs ---------------------------------------------------------------------------------------
 library(qpdf)
