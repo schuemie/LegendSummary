@@ -432,9 +432,9 @@ createHowOftenTable <- function(target, comparator, outcome, connection) {
                years = gsub("-", "<", years),
                targetOutcomes = gsub("-", "<", targetOutcomes),
                ir = gsub("-", "<", ir)) |>
-        mutate(targetSubjects = gsub("NA|^0|NaN", "-", targetSubjects),
-               years = gsub("NA|^0|NaN", "-", years),
-               targetOutcomes = gsub("NA|^0|NaN", "-", targetOutcomes),
+        mutate(targetSubjects = gsub("NA|^ *0|NaN", "-", targetSubjects),
+               years = gsub("NA|^ *0|NaN", "-", years),
+               targetOutcomes = gsub("NA|^ *0|NaN", "-", targetOutcomes),
                ir = gsub("NA|^0|NaN", "-", ir)) |>
         select(databaseName, targetSubjects, years, targetOutcomes, ir) |>
         arrange(databaseName)
